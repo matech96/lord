@@ -511,48 +511,55 @@ class EvaluationCallback(Callback):
 		self.writer = tf.summary.FileWriter(tensorboard_dir)
 
 	def on_epoch_end(self, epoch, logs={}):
-		identity_id = random.choice(list(self.images.keys()))
+		source_id = random.choice(list(self.images.keys()))
+		target_id = random.choice(list(self.images.keys()))
 
-		image_idx = np.random.randint(0, self.images[identity_id].shape[0], size=2)
-		imgs = self.images[identity_id][image_idx]
+		image_idx = np.random.randint(0, self.images[source_id].shape[0])
+		source_img = self.images[source_id][image_idx]
+
+		image_idx = np.random.randint(0, self.images[target_id].shape[0])
+		target_img = self.images[target_id][image_idx]
 
 		summaries = [
-			self.dump_source(imgs[[0]]),
-			self.dump_identity(imgs[[1]]),
+			self.dump_source(source_img),
+			self.dump_target(target_img),
 
-			self.dump_intermediate(imgs[[0]]),
-			self.dump_reconstruction(imgs[[0]]),
-			self.dump_conversion(imgs[[0]], imgs[[1]])
+			self.dump_intermediate(source_img),
+			self.dump_reconstruction(source_img),
+			self.dump_conversion(source_img, target_img)
 		]
 
 		for summary in summaries:
 			self.writer.add_summary(summary, global_step=epoch)
-			self.writer.flush()
+
+		self.writer.flush()
 
 	def dump_source(self, img):
 		image = self.make_image(img)
 		return tf.Summary(value=[tf.Summary.Value(tag='source', image=image)])
 
-	def dump_identity(self, img):
+	def dump_target(self, img):
 		image = self.make_image(img)
-		return tf.Summary(value=[tf.Summary.Value(tag='identity', image=image)])
+		return tf.Summary(value=[tf.Summary.Value(tag='target', image=image)])
 
 	def dump_intermediate(self, img):
-		intermediate_img = self.converter.content_encoder.predict(img)[0]
+		intermediate_img = self.converter.content_encoder.predict(np.expand_dims(img, axis=0))[0]
 
 		image = self.make_image(intermediate_img)
 		return tf.Summary(value=[tf.Summary.Value(tag='intermediate', image=image)])
 
 	def dump_reconstruction(self, img):
-		reconstructed_img = self.converter.converter.predict([img, img])[0]
+		reconstructed_img, _ = self.converter.converter.predict([np.expand_dims(img, axis=0), np.expand_dims(img, axis=0)])
 
-		image = self.make_image(reconstructed_img)
+		image = self.make_image(reconstructed_img[0])
 		return tf.Summary(value=[tf.Summary.Value(tag='reconstructed', image=image)])
 
 	def dump_conversion(self, source_img, identity_img):
-		converted_img = self.converter.converter.predict([source_img, identity_img])[0]
+		converted_img, _ = self.converter.converter.predict([
+			np.expand_dims(source_img, axis=0), np.expand_dims(identity_img, axis=0)
+		])
 
-		image = self.make_image(converted_img)
+		image = self.make_image(converted_img[0])
 		return tf.Summary(value=[tf.Summary.Value(tag='converted', image=image)])
 
 	@staticmethod
