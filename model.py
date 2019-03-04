@@ -119,10 +119,7 @@ class FaceConverter:
 
 		loss = self.converter.train_on_batch(
 			x=[source_images_batch, target_images_batch],
-			y=[
-				source_images_batch,
-				-1*np.ones([self.config.batch_size, 1])
-			]
+			y=[source_images_batch, -1*np.ones([self.config.batch_size, 1])]
 		)
 
 		return dict(
