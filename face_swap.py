@@ -53,10 +53,10 @@ def train(args):
 		for k in train_images.keys():
 			train_images[k] = (train_images[k] / 255) * 2 - 1
 
-	with np.load(assets.get_single_identity_preprocess_file_path(args.anchor_data_name)) as d:
-		anchor_images = d['imgs']
-
-		anchor_images = (anchor_images / 255) * 2 - 1
+	# with np.load(assets.get_single_identity_preprocess_file_path(args.anchor_data_name)) as d:
+	# 	anchor_images = d['imgs']
+	#
+	# 	anchor_images = (anchor_images / 255) * 2 - 1
 
 	# with np.load(assets.get_single_identity_preprocess_file_path(args.validation_data_name_a)) as d:
 	# 	validation_images_a = d['imgs']
@@ -68,15 +68,15 @@ def train(args):
 
 	face_converter = FaceConverter.build(
 		img_shape=(64, 64, 3),
-		identity_dim=32,
-		n_adain_layers=3,
+		content_dim=128,
+		identity_dim=128,
+		n_adain_layers=4,
 		adain_dim=256,
 		batch_size=16
 	)
 
 	face_converter.train(
 		images=train_images,
-		anchor_images=anchor_images,
 
 		# validation_images_a=validation_images_a,
 		# validation_images_b=validation_images_b,
