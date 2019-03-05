@@ -28,10 +28,7 @@ class AssetManager:
 		if not os.path.exists(self.__out_dir):
 			os.mkdir(self.__out_dir)
 
-	def get_single_identity_preprocess_file_path(self, data_name):
-		return os.path.join(self.__preprocess_dir, data_name + '.npz')
-
-	def get_multi_identity_preprocess_file_path(self, data_name):
+	def get_preprocess_file_path(self, data_name):
 		return os.path.join(self.__preprocess_dir, data_name + '.pkl')
 
 	def get_model_dir(self, model_name):
