@@ -311,41 +311,31 @@ class EvaluationCallback(TensorBoard):
 	def on_epoch_end(self, epoch, logs={}):
 		super().on_epoch_end(epoch, logs)
 
-		identity_id = random.choice(list(self.images.keys()))
+		source_identity_id = random.choice(list(self.images.keys()))
+		idx = np.random.randint(0, self.images[source_identity_id].shape[0], size=2)
+		source_identity_imgs = self.images[source_identity_id][idx]
 
-		idx = np.random.randint(0, self.images[identity_id].shape[0], size=2)
-		imgs = self.images[identity_id][idx]
-
-		source_img = imgs[0]
-		target_img = imgs[1]
-
-		summaries = [
-			self.dump_source(source_img),
-			self.dump_target(target_img),
-
-			self.dump_reconstruction(source_img, target_img)
-		]
-
-		for summary in summaries:
-			self.writer.add_summary(summary, global_step=epoch)
-
-		self.writer.flush()
-
-	def dump_source(self, img):
-		image = self.make_image(img)
-		return tf.Summary(value=[tf.Summary.Value(tag='source', image=image)])
-
-	def dump_target(self, img):
-		image = self.make_image(img)
-		return tf.Summary(value=[tf.Summary.Value(tag='target', image=image)])
-
-	def dump_reconstruction(self, source_img, identity_img):
 		reconstructed_img = self.converter.converter.predict([
-			np.expand_dims(source_img, axis=0), np.expand_dims(identity_img, axis=0)
-		])
+			np.expand_dims(source_identity_imgs[0], axis=0), np.expand_dims(source_identity_imgs[1], axis=0)
+		])[0]
 
-		image = self.make_image(reconstructed_img[0])
-		return tf.Summary(value=[tf.Summary.Value(tag='reconstructed', image=image)])
+		target_identity_id = random.choice(list(self.images.keys()))
+		idx = np.random.randint(0, self.images[target_identity_id].shape[0])
+		target_identity_img = self.images[target_identity_id][idx]
+
+		converted_img = self.converter.converter.predict([
+			np.expand_dims(source_identity_imgs[0], axis=0), np.expand_dims(target_identity_img, axis=0)
+		])[0]
+
+		reconstructed_merged_img = np.concatenate((source_identity_imgs[0], source_identity_imgs[1], reconstructed_img), axis=1)
+		converted_merged_img = np.concatenate((source_identity_imgs[0], target_identity_img, converted_img), axis=1)
+
+		reconstructed_summary = tf.Summary(value=[tf.Summary.Value(tag='reconstructed', image=self.make_image(reconstructed_merged_img))])
+		converted_summary = tf.Summary(value=[tf.Summary.Value(tag='converted', image=self.make_image(converted_merged_img))])
+
+		self.writer.add_summary(reconstructed_summary, global_step=epoch)
+		self.writer.add_summary(converted_summary, global_step=epoch)
+		self.writer.flush()
 
 	@staticmethod
 	def make_image(tensor):

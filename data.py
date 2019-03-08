@@ -1,29 +1,27 @@
-from imageio import imread
 import numpy as np
+import imageio
 import cv2
-from tqdm import tqdm
 
 
-def preprocess_image(path, crop_size, target_size):
-	img = imread(path)
+def preprocess_image(path, crop_size=None, target_size=None):
+	img = imageio.imread(path)
 
 	if crop_size:
-		cropped_img = img[
+		img = img[
 			(img.shape[0] // 2 - crop_size[0] // 2):(img.shape[0] // 2 + crop_size[0] // 2),
 			(img.shape[1] // 2 - crop_size[1] // 2):(img.shape[1] // 2 + crop_size[1] // 2)
 		]
-	else:
-		cropped_img = img
 
-	resized_img = cv2.resize(cropped_img, dsize=target_size)
+	if target_size:
+		img = cv2.resize(img, dsize=target_size)
 
-	return resized_img
+	return img
 
 
-def preprocess_images(paths, crop_size, target_size):
+def preprocess_images(paths, crop_size=None, target_size=None):
 	imgs = []
 
-	for path in tqdm(paths):
+	for path in paths:
 		imgs.append(preprocess_image(path, crop_size, target_size))
 
 	return np.stack(imgs, axis=0)

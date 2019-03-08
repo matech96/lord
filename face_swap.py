@@ -11,6 +11,7 @@ from dataset import CelebA
 
 from assets import AssetManager
 from model import FaceConverter
+from config import default_config
 
 
 def preprocess(args):
@@ -21,8 +22,7 @@ def preprocess(args):
 
 	imgs = dict()
 	for i, identity in enumerate(identity_map.keys()):
-		print('preprocessing identity: #%d' % i)
-		imgs[identity] = data.preprocess_images(identity_map[identity], crop_size=(128, 128), target_size=(64, 64))
+		imgs[identity] = data.preprocess_images(identity_map[identity], crop_size=default_config['img_shape'])
 
 	with open(assets.get_preprocess_file_path(args.data_name), 'wb') as fd:
 		pickle.dump(imgs, fd)
@@ -40,22 +40,22 @@ def train(args):
 			train_images[k] = (train_images[k] / 255) * 2 - 1
 
 	face_converter = FaceConverter.build(
-		img_shape=(64, 64, 3),
+		img_shape=default_config['img_shape'],
 
-		content_dim=32,
-		identity_dim=512,
+		content_dim=default_config['content_dim'],
+		identity_dim=default_config['identity_dim'],
 
-		n_adain_layers=4,
-		adain_dim=256
+		n_adain_layers=default_config['n_adain_layers'],
+		adain_dim=default_config['adain_dim']
 	)
 
 	face_converter.train(
 		images=train_images,
-		batch_size=64,
+		batch_size=default_config['batch_size'],
 
-		n_total_iterations=1000000,
-		n_checkpoint_iterations=1000,
-		n_log_iterations=100,
+		n_total_iterations=default_config['n_total_iterations'],
+		n_checkpoint_iterations=default_config['n_checkpoint_iterations'],
+		n_log_iterations=default_config['n_log_iterations'],
 
 		model_dir=model_dir,
 		tensorboard_dir=tensorboard_dir
