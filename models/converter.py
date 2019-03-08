@@ -49,7 +49,9 @@ class FaceConverter:
 		identity_encoder = load_model(os.path.join(model_dir, 'identity_encoder.h5py'))
 		mlp = load_model(os.path.join(model_dir, 'mlp.h5py'))
 
-		decoder = load_model(os.path.join(model_dir, 'decoder.h5py'))
+		decoder = load_model(os.path.join(model_dir, 'decoder.h5py'), custom_objects={
+			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
+		})
 
 		return FaceConverter(config, content_encoder, identity_encoder, mlp, decoder)
 
@@ -290,6 +292,14 @@ class AdaptiveInstanceNormalization(Layer):
 		x_standard = (x - mean) / (tf.sqrt(var) + 1e-7)
 
 		return (x_standard * adain_scale) + adain_offset
+
+	def get_config(self):
+		config = {
+			'adain_layer_idx': self.adain_layer_idx
+		}
+
+		base_config = super().get_config()
+		return dict(list(base_config.items()) + list(config.items()))
 
 
 class EvaluationCallback(TensorBoard):
