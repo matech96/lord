@@ -10,7 +10,7 @@ import data
 from dataset import CelebA
 
 from assets import AssetManager
-from models.converter import FaceConverter
+from model import FaceConverter
 
 
 def preprocess(args):

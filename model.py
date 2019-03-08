@@ -12,11 +12,9 @@ import tensorflow as tf
 from keras import backend as K
 from keras import optimizers
 from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, BatchNormalization, ReLU, LeakyReLU, Activation
-from keras.layers import Layer, Input, Add, Reshape, Flatten
+from keras.layers import Layer, Input, Reshape, Flatten
 from keras.models import Model, load_model
-from keras.callbacks import TensorBoard, Callback
-
-from models.instance_normalization import InstanceNormalization
+from keras.callbacks import TensorBoard
 
 
 class FaceConverter:
