@@ -2,12 +2,15 @@ import os
 from abc import ABC, abstractmethod
 
 
-supported_datasets = ['celeba']
+supported_datasets = ['celeba', 'vggface2']
 
 
 def get_dataset(name, path):
 	if name == 'celeba':
 		return CelebA(path)
+
+	if name == 'vggface2':
+		return VggFace2(path)
 
 	raise Exception('unsupported dataset: %s' % name)
 
@@ -47,3 +50,22 @@ class CelebA(FaceSet):
 
 		return identity_map
 
+
+class VggFace2(FaceSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__imgs_dir = os.path.join(self._base_dir, 'train.cropped')
+
+	def get_identity_map(self):
+		identity_ids = os.listdir(self.__imgs_dir)
+
+		identity_map = dict()
+		for identity in identity_ids:
+			identity_map[identity] = [
+				os.path.join(self.__imgs_dir, identity, f)
+				for f in os.listdir(os.path.join(self.__imgs_dir, identity))
+			]
+
+		return identity_map
