@@ -1,5 +1,4 @@
 import argparse
-import pickle
 import random
 import os
 
@@ -20,17 +19,16 @@ def preprocess(args):
 	face_set = dataset.get_dataset(args.dataset, args.dataset_path)
 	identity_map = face_set.get_identity_map()
 
-	face_preprocessor = FacePreprocessor(args.segmentation_model_path, tuple(args.crop_size), tuple(args.target_size))
+	face_preprocessor = FacePreprocessor(args.segmentation_model_path, args.crop_size, args.target_size)
+	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
 
-	imgs = dict()
-	for i, identity in enumerate(identity_map.keys()):
+	identity_ids = list(identity_map.keys())[args.head_identity_index:args.tail_identity_index]
+
+	for i, identity in enumerate(identity_ids):
 		print('processing identity: %s' % identity)
 
 		identity_imgs, identity_masks = face_preprocessor.preprocess_imgs(identity_map[identity])
-		imgs[identity] = dict(imgs=identity_imgs, masks=identity_masks)
-
-	with open(assets.get_preprocess_file_path(args.data_name), 'wb') as fd:
-		pickle.dump(imgs, fd)
+		np.savez(os.path.join(preprocessed_dir, identity + '.npz'), imgs=identity_imgs, masks=identity_masks)
 
 
 def train(args):
@@ -38,8 +36,15 @@ def train(args):
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	with open(assets.get_preprocess_file_path(args.data_name), 'rb') as fd:
-		train_imgs = pickle.load(fd)
+	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
+	preprocessed_files = [os.path.join(preprocessed_dir, f) for f in os.listdir(preprocessed_dir)]
+
+	data = dict()
+	for path in preprocessed_files:
+		p = np.load(path)
+
+		identity_id = os.path.splitext(os.path.basename(path))[0]
+		data[identity_id] = dict(imgs=p['imgs'], masks=p['masks'])
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
@@ -52,7 +57,7 @@ def train(args):
 	)
 
 	face_converter.train(
-		imgs=train_imgs,
+		imgs=data,
 		batch_size=default_config['batch_size'],
 
 		n_epochs=default_config['n_epochs'],
@@ -105,8 +110,10 @@ def main():
 	preprocess_parser.add_argument('-ds', '--dataset', type=str, choices=dataset.supported_datasets, required=True)
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	preprocess_parser.add_argument('-hi', '--head-identity-index', type=int, required=True)
+	preprocess_parser.add_argument('-ti', '--tail-identity-index', type=int, required=True)
 	preprocess_parser.add_argument('-smp', '--segmentation-model-path', type=str, required=True)
-	preprocess_parser.add_argument('-cs', '--crop-size', type=int, nargs=2, required=True)
+	preprocess_parser.add_argument('-cs', '--crop-size', type=int, nargs=2, required=False)
 	preprocess_parser.add_argument('-ts', '--target-size', type=int, nargs=2, required=True)
 	preprocess_parser.add_argument('-g', '--gpus', type=int, default=1)
 	preprocess_parser.set_defaults(func=preprocess)

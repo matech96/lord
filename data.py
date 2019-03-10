@@ -9,8 +9,8 @@ class FacePreprocessor:
 
 	def __init__(self, segmentation_model_path, crop_size=None, target_size=None):
 		self.__segmentation_model = load_model(segmentation_model_path)
-		self.__crop_size = crop_size
-		self.__target_size = target_size
+		self.__crop_size = tuple(crop_size) if crop_size else None
+		self.__target_size = tuple(target_size) if target_size else None
 
 	def preprocess_img(self, path):
 		img = imageio.imread(path)
