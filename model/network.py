@@ -1,20 +1,17 @@
 import os
 import pickle
-import random
-import io
 
-from tqdm import tqdm
-from PIL import Image
-
-import numpy as np
 import tensorflow as tf
-
 from keras import backend as K
 from keras import optimizers
+from keras.callbacks import ReduceLROnPlateau
 from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, BatchNormalization, ReLU, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Flatten
 from keras.models import Model, load_model
-from keras.callbacks import TensorBoard
+
+from model.generator import DataGenerator
+from model.checkpoint import MultiModelCheckpoint
+from model.evaluation import EvaluationCallback
 
 
 class FaceConverter:
@@ -75,51 +72,20 @@ class FaceConverter:
 
 		self.converter = self.__build_converter()
 
-	def train(self, images, batch_size,
-			  n_total_iterations, n_checkpoint_iterations, n_log_iterations,
+	def train(self, imgs, batch_size,
+			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
-		evaluation_callback = EvaluationCallback(self, images, tensorboard_dir)
-		evaluation_callback.set_model(self.converter)
+		evaluation_callback = EvaluationCallback(self, imgs, tensorboard_dir)
+		checkpoint = MultiModelCheckpoint(saver=self, model_dir=model_dir, n_epochs=n_epochs_per_checkpoint)
+		lr_decay = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=1e-6, verbose=1)
 
-		for i in tqdm(range(n_total_iterations)):
-			converter_state = self.__train_converter(images, batch_size)
+		data_generator = DataGenerator(imgs, batch_size, n_iterations_per_epoch)
 
-			if i % n_log_iterations == 0:
-				evaluation_callback.on_epoch_end(epoch=i, logs={**converter_state})
-
-			if i % n_checkpoint_iterations == 0:
-				self.save(model_dir)
-
-		evaluation_callback.on_train_end(None)
-
-	def __train_converter(self, images, batch_size):
-		source_images_batch, target_images_batch = self.__sample_batch(images, batch_size)
-
-		loss = self.converter.train_on_batch(
-			x=[source_images_batch, target_images_batch],
-			y=source_images_batch
+		self.converter.fit_generator(
+			data_generator, epochs=n_epochs,
+			callbacks=[evaluation_callback, checkpoint, lr_decay], verbose=1
 		)
-
-		return dict(
-			converter_reconstruction_loss=loss,
-			converter_lr=K.get_value(self.converter.optimizer.lr)
-		)
-
-	def __sample_batch(self, images, batch_size):
-		identity_ids = random.choices(list(images.keys()), k=batch_size)
-
-		source_images_batch = [
-			images[identity_id][np.random.randint(0, images[identity_id].shape[0], size=1)]
-			for identity_id in identity_ids
-		]
-
-		target_images_batch = [
-			images[identity_id][np.random.randint(0, images[identity_id].shape[0], size=1)]
-			for identity_id in identity_ids
-		]
-
-		return np.concatenate(source_images_batch, axis=0), np.concatenate(target_images_batch, axis=0)
 
 	def __build_converter(self):
 		source_image = Input(shape=self.config.img_shape)
@@ -137,7 +103,7 @@ class FaceConverter:
 		)
 
 		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4),
+			optimizer=optimizers.Adam(lr=5e-4),
 			loss='mean_absolute_error',
 		)
 
@@ -259,7 +225,7 @@ class FaceConverter:
 		x = LeakyReLU()(x)
 
 		x = Conv2D(filters=3, kernel_size=(7, 7), padding='same')(x)
-		target_image = Activation('tanh')(x)
+		target_image = Activation('sigmoid')(x)
 
 		model = Model(inputs=[content_code, identity_adain_params], outputs=target_image, name='decoder')
 
@@ -298,52 +264,3 @@ class AdaptiveInstanceNormalization(Layer):
 
 		base_config = super().get_config()
 		return dict(list(base_config.items()) + list(config.items()))
-
-
-class EvaluationCallback(TensorBoard):
-
-	def __init__(self, converter, images, tensorboard_dir):
-		super().__init__(log_dir=tensorboard_dir)
-
-		self.converter = converter
-		self.images = images
-
-	def on_epoch_end(self, epoch, logs={}):
-		super().on_epoch_end(epoch, logs)
-
-		source_identity_id = random.choice(list(self.images.keys()))
-		idx = np.random.randint(0, self.images[source_identity_id].shape[0], size=2)
-		source_identity_imgs = self.images[source_identity_id][idx]
-
-		reconstructed_img = self.converter.converter.predict([
-			np.expand_dims(source_identity_imgs[0], axis=0), np.expand_dims(source_identity_imgs[1], axis=0)
-		])[0]
-
-		target_identity_id = random.choice(list(self.images.keys()))
-		idx = np.random.randint(0, self.images[target_identity_id].shape[0])
-		target_identity_img = self.images[target_identity_id][idx]
-
-		converted_img = self.converter.converter.predict([
-			np.expand_dims(source_identity_imgs[0], axis=0), np.expand_dims(target_identity_img, axis=0)
-		])[0]
-
-		reconstructed_merged_img = np.concatenate((source_identity_imgs[0], source_identity_imgs[1], reconstructed_img), axis=1)
-		converted_merged_img = np.concatenate((source_identity_imgs[0], target_identity_img, converted_img), axis=1)
-
-		reconstructed_summary = tf.Summary(value=[tf.Summary.Value(tag='reconstructed', image=self.make_image(reconstructed_merged_img))])
-		converted_summary = tf.Summary(value=[tf.Summary.Value(tag='converted', image=self.make_image(converted_merged_img))])
-
-		self.writer.add_summary(reconstructed_summary, global_step=epoch)
-		self.writer.add_summary(converted_summary, global_step=epoch)
-		self.writer.flush()
-
-	@staticmethod
-	def make_image(tensor):
-		height, width, channel = tensor.shape
-		image = Image.fromarray((((tensor + 1) / 2) * 255).astype(np.uint8))
-
-		with io.BytesIO() as out:
-			image.save(out, format='PNG')
-			image_string = out.getvalue()
-
-		return tf.Summary.Image(height=height, width=width, colorspace=channel, encoded_image_string=image_string)

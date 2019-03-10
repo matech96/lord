@@ -8,7 +8,7 @@ default_config = dict(
 	adain_dim=256,
 
 	batch_size=64,
-	n_total_iterations=1000000,
-	n_checkpoint_iterations=10000,
-	n_log_iterations=500
+	n_epochs=1000000,
+	n_iterations_per_epoch=1000,
+	n_epochs_per_checkpoint=5
 )
