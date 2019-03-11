@@ -4,10 +4,12 @@ import pickle
 import tensorflow as tf
 from keras import backend as K
 from keras import optimizers
+from keras import losses
 from keras.callbacks import ReduceLROnPlateau
 from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, BatchNormalization, ReLU, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Flatten
 from keras.models import Model, load_model
+from keras.applications import vgg16
 
 from model.generator import DataGenerator
 from model.checkpoint import MultiModelCheckpoint
@@ -71,6 +73,8 @@ class FaceConverter:
 		self.decoder = decoder
 
 		self.converter = self.__build_converter()
+		self.vgg = self.__build_vgg()
+		self.perceptual = self.__build_perceptual()
 
 	def train(self, imgs, batch_size,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
@@ -80,34 +84,67 @@ class FaceConverter:
 		checkpoint = MultiModelCheckpoint(saver=self, model_dir=model_dir, n_epochs=n_epochs_per_checkpoint)
 		lr_decay = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=1e-6, verbose=1)
 
-		data_generator = DataGenerator(imgs, batch_size, n_iterations_per_epoch)
+		data_generator = DataGenerator(self.vgg, imgs, batch_size, n_iterations_per_epoch)
 
-		self.converter.fit_generator(
+		self.perceptual.fit_generator(
 			data_generator, epochs=n_epochs,
 			callbacks=[evaluation_callback, checkpoint, lr_decay], verbose=1
 		)
 
 	def __build_converter(self):
-		source_image = Input(shape=self.config.img_shape)
-		identity_image = Input(shape=self.config.img_shape)
+		source_img = Input(shape=self.config.img_shape)
+		identity_img = Input(shape=self.config.img_shape)
 
-		content_code = self.content_encoder(source_image)
+		content_code = self.content_encoder(source_img)
 
-		identity_code = self.identity_encoder(identity_image)
+		identity_code = self.identity_encoder(identity_img)
 		identity_adain_params = self.mlp(identity_code)
 
 		model = Model(
-			inputs=[source_image, identity_image],
+			inputs=[source_img, identity_img],
 			outputs=self.decoder([content_code, identity_adain_params]),
 			name='converter'
 		)
 
+		print('converter arch:')
+		model.summary()
+
+		return model
+
+	def __build_vgg(self):
+		vgg = vgg16.VGG16(include_top=False, input_shape=(64, 64, 3))
+		layer_ids = [2, 5, 9, 13, 17]
+		layer_outputs = [vgg.layers[layer_id].output for layer_id in layer_ids]
+
+		base_model = Model(inputs=vgg.inputs, outputs=layer_outputs)
+
+		img = Input(shape=self.config.img_shape)
+		model = Model(inputs=img, outputs=base_model(NormalizeForVGG()(img)), name='vgg')
+
+		print('vgg arch:')
+		model.summary()
+
+		model._make_predict_function()
+		return model
+
+	def __build_perceptual(self):
+		source_img = Input(shape=self.config.img_shape)
+		identity_img = Input(shape=self.config.img_shape)
+
+		converted_img = self.converter([source_img, identity_img])
+		perceptual_codes = self.vgg(converted_img)
+
+		model = Model(inputs=[source_img, identity_img], outputs=perceptual_codes, name='perceptual')
+
+		self.vgg.trainable = False
+
 		model.compile(
-			optimizer=optimizers.Adam(lr=5e-4),
-			loss='mean_absolute_error',
+			optimizer=optimizers.Adam(lr=1e-4),
+			loss=[losses.mean_absolute_error] * 5,
+			loss_weights=[1] * 5
 		)
 
-		print('converter arch:')
+		print('perceptual arch:')
 		model.summary()
 
 		return model
@@ -264,3 +301,15 @@ class AdaptiveInstanceNormalization(Layer):
 
 		base_config = super().get_config()
 		return dict(list(base_config.items()) + list(config.items()))
+
+
+class NormalizeForVGG(Layer):
+
+	def __init__(self, **kwargs):
+		super().__init__(**kwargs)
+
+	def call(self, inputs, **kwargs):
+		x = inputs * 255
+
+		return vgg16.preprocess_input(x)
+

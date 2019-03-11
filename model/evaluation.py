@@ -22,38 +22,22 @@ class EvaluationCallback(TensorBoard):
 		super().on_epoch_end(epoch, logs)
 
 		source_identity_id = random.choice(self.__identity_ids)
-		idx = np.random.randint(0, self.__imgs[source_identity_id]['imgs'].shape[0], size=2)
-		source_identity_imgs = self.__imgs[source_identity_id]['imgs'][idx]
-		source_identity_masks = self.__imgs[source_identity_id]['masks'][idx]
+		idx = np.random.randint(0, self.__imgs[source_identity_id].shape[0], size=2)
+		source_identity_imgs = self.__imgs[source_identity_id][idx]
 
-		masked_source_identity_imgs = source_identity_imgs * source_identity_masks[..., np.newaxis]
-
-		masked_reconstructed_img = self.__converter.converter.predict([
-			masked_source_identity_imgs[[0]], masked_source_identity_imgs[[1]]
+		reconstructed_img = self.__converter.converter.predict([
+			source_identity_imgs[[0]], source_identity_imgs[[1]]
 		])[0]
-
-		reconstructed_img = (
-			masked_reconstructed_img * source_identity_masks[0][..., np.newaxis]
-			+ source_identity_imgs[0] * (1 - source_identity_masks[0][..., np.newaxis])
-		)
 
 		reconstructed_merged_img = np.concatenate((source_identity_imgs[0], source_identity_imgs[1], reconstructed_img), axis=1)
 
 		target_identity_id = random.choice(self.__identity_ids)
-		idx = np.random.randint(0, self.__imgs[target_identity_id]['imgs'].shape[0], size=1)
-		target_identity_img = self.__imgs[target_identity_id]['imgs'][idx]
-		target_identity_mask = self.__imgs[target_identity_id]['masks'][idx]
+		idx = np.random.randint(0, self.__imgs[target_identity_id].shape[0], size=1)
+		target_identity_img = self.__imgs[target_identity_id][idx]
 
-		masked_target_identity_img = target_identity_img * target_identity_mask[..., np.newaxis]
-
-		masked_converted_img = self.__converter.converter.predict([
-			masked_source_identity_imgs[[0]], masked_target_identity_img
+		converted_img = self.__converter.converter.predict([
+			source_identity_imgs[[0]], target_identity_img
 		])[0]
-
-		converted_img = (
-			masked_converted_img * source_identity_masks[0][..., np.newaxis]
-			+ source_identity_imgs[0] * (1 - source_identity_masks[0][..., np.newaxis])
-		)
 
 		converted_merged_img = np.concatenate((source_identity_imgs[0], target_identity_img[0], converted_img), axis=1)
 

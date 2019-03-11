@@ -38,12 +38,10 @@ def train(args):
 
 	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
 
-	data = dict()
+	imgs = dict()
 	for identity_file_name in os.listdir(preprocessed_dir):
-		p = np.load(os.path.join(preprocessed_dir, identity_file_name))
-
 		identity_id = os.path.splitext(identity_file_name)[0]
-		data[identity_id] = dict(imgs=p['imgs'], masks=p['masks'])
+		imgs[identity_id] = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs']
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
@@ -56,7 +54,7 @@ def train(args):
 	)
 
 	face_converter.train(
-		imgs=data,
+		imgs=imgs,
 		batch_size=default_config['batch_size'],
 
 		n_epochs=default_config['n_epochs'],
