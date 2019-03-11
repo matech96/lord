@@ -41,7 +41,7 @@ def train(args):
 	imgs = dict()
 	for identity_file_name in os.listdir(preprocessed_dir):
 		identity_id = os.path.splitext(identity_file_name)[0]
-		identity_imgs = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs']
+		identity_imgs = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs'][:args.max_files_per_identity]
 		imgs[identity_id] = identity_imgs.astype(np.float64) / 255
 
 	face_converter = FaceConverter.build(
@@ -119,6 +119,7 @@ def main():
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
+	train_parser.add_argument('-mf', '--max-files-per-identity', type=int, default=50)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
