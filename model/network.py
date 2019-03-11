@@ -139,7 +139,7 @@ class FaceConverter:
 		self.vgg.trainable = False
 
 		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4),
+			optimizer=optimizers.Adam(lr=5e-4),
 			loss=[losses.mean_absolute_error] * 5,
 			loss_weights=[1] * 5
 		)
