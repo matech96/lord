@@ -46,8 +46,8 @@ def train(args):
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
 
-		content_dim=default_config['content_dim'],
-		identity_dim=default_config['identity_dim'],
+		content_dim=args.content_dim,
+		identity_dim=args.identity_dim,
 
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim']
@@ -118,6 +118,8 @@ def main():
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
+	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
