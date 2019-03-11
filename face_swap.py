@@ -19,7 +19,7 @@ def preprocess(args):
 	face_set = dataset.get_dataset(args.dataset, args.dataset_path)
 	identity_map = face_set.get_identity_map()
 
-	face_preprocessor = FacePreprocessor(args.segmentation_model_path, args.crop_size, args.target_size)
+	face_preprocessor = FacePreprocessor(args.crop_size, args.target_size)
 	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
 
 	identity_ids = list(identity_map.keys())[args.head_identity_index:args.tail_identity_index]
@@ -27,8 +27,8 @@ def preprocess(args):
 	for i, identity in enumerate(identity_ids):
 		print('processing identity: %s' % identity)
 
-		identity_imgs, identity_masks = face_preprocessor.preprocess_imgs(identity_map[identity])
-		np.savez(os.path.join(preprocessed_dir, identity + '.npz'), imgs=identity_imgs, masks=identity_masks)
+		identity_imgs = face_preprocessor.preprocess_imgs(identity_map[identity])
+		np.savez(os.path.join(preprocessed_dir, identity + '.npz'), imgs=identity_imgs)
 
 
 def train(args):
@@ -41,7 +41,8 @@ def train(args):
 	imgs = dict()
 	for identity_file_name in os.listdir(preprocessed_dir):
 		identity_id = os.path.splitext(identity_file_name)[0]
-		imgs[identity_id] = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs']
+		identity_imgs = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs']
+		imgs[identity_id] = identity_imgs.astype(np.float64) / 255
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
@@ -109,10 +110,8 @@ def main():
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.add_argument('-hi', '--head-identity-index', type=int, required=True)
 	preprocess_parser.add_argument('-ti', '--tail-identity-index', type=int, required=True)
-	preprocess_parser.add_argument('-smp', '--segmentation-model-path', type=str, required=True)
 	preprocess_parser.add_argument('-cs', '--crop-size', type=int, nargs=2, required=False)
 	preprocess_parser.add_argument('-ts', '--target-size', type=int, nargs=2, required=True)
-	preprocess_parser.add_argument('-g', '--gpus', type=int, default=1)
 	preprocess_parser.set_defaults(func=preprocess)
 
 	train_parser = action_parsers.add_parser('train')
