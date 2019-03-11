@@ -37,13 +37,12 @@ def train(args):
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
 	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
-	preprocessed_files = [os.path.join(preprocessed_dir, f) for f in os.listdir(preprocessed_dir)]
 
 	data = dict()
-	for path in preprocessed_files:
-		p = np.load(path)
+	for identity_file_name in os.listdir(preprocessed_dir):
+		p = np.load(os.path.join(preprocessed_dir, identity_file_name))
 
-		identity_id = os.path.splitext(os.path.basename(path))[0]
+		identity_id = os.path.splitext(identity_file_name)[0]
 		data[identity_id] = dict(imgs=p['imgs'], masks=p['masks'])
 
 	face_converter = FaceConverter.build(
