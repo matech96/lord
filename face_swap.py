@@ -39,7 +39,7 @@ def train(args):
 	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
 
 	imgs = dict()
-	for identity_file_name in os.listdir(preprocessed_dir):
+	for identity_file_name in os.listdir(preprocessed_dir)[:args.max_identities]:
 		identity_id = os.path.splitext(identity_file_name)[0]
 		identity_imgs = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs'][:args.max_files_per_identity]
 		imgs[identity_id] = identity_imgs.astype(np.float64) / 255
@@ -51,7 +51,9 @@ def train(args):
 		identity_dim=args.identity_dim,
 
 		n_adain_layers=default_config['n_adain_layers'],
-		adain_dim=default_config['adain_dim']
+		adain_dim=default_config['adain_dim'],
+
+		use_vgg_face=(args.vgg_type == 'vgg-face')
 	)
 
 	face_converter.train(
@@ -120,6 +122,8 @@ def main():
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
 	train_parser.add_argument('-mf', '--max-files-per-identity', type=int, default=50)
+	train_parser.add_argument('-mi', '--max-identities', type=int, default=10000)
+	train_parser.add_argument('-vgg', '--vgg-type', type=str, choices=('vgg-face', 'vgg'), required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
