@@ -56,7 +56,8 @@ def train(args):
 
 	face_converter.train(
 		imgs=imgs,
-		batch_size=default_config['batch_size'],
+		batch_size=default_config['batch_size'] * args.gpus,
+		n_gpus=args.gpus,
 
 		n_epochs=default_config['n_epochs'],
 		n_iterations_per_epoch=default_config['n_iterations_per_epoch'],

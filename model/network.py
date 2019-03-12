@@ -9,6 +9,7 @@ from keras.callbacks import ReduceLROnPlateau
 from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, BatchNormalization, ReLU, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Flatten
 from keras.models import Model, load_model
+from keras.utils import multi_gpu_model
 from keras.applications import vgg16
 from keras_vggface import vggface
 
@@ -76,9 +77,8 @@ class FaceConverter:
 
 		self.converter = self.__build_converter()
 		self.vgg = self.__build_vgg()
-		self.perceptual = self.__build_perceptual()
 
-	def train(self, imgs, batch_size,
+	def train(self, imgs, batch_size, n_gpus,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
@@ -88,7 +88,8 @@ class FaceConverter:
 
 		data_generator = DataGenerator(self.vgg, imgs, batch_size, n_iterations_per_epoch)
 
-		self.perceptual.fit_generator(
+		model = self.__build_perceptual(n_gpus)
+		model.fit_generator(
 			data_generator, epochs=n_epochs,
 			callbacks=[evaluation_callback, checkpoint, lr_decay], verbose=1
 		)
@@ -133,16 +134,19 @@ class FaceConverter:
 		model._make_predict_function()
 		return model
 
-	def __build_perceptual(self):
+	def __build_perceptual(self, n_gpus):
 		source_img = Input(shape=self.config.img_shape)
 		identity_img = Input(shape=self.config.img_shape)
 
 		converted_img = self.converter([source_img, identity_img])
 		perceptual_codes = self.vgg(converted_img)
 
+		self.vgg.trainable = False
+
 		model = Model(inputs=[source_img, identity_img], outputs=perceptual_codes, name='perceptual')
 
-		self.vgg.trainable = False
+		if n_gpus > 1:
+			model = multi_gpu_model(model, n_gpus)
 
 		model.compile(
 			optimizer=optimizers.Adam(lr=1e-4),
