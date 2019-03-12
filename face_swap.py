@@ -1,9 +1,7 @@
 import argparse
-import random
 import os
 
 import numpy as np
-import imageio
 
 import dataset
 from data import FacePreprocessor
@@ -69,34 +67,6 @@ def train(args):
 	)
 
 	face_converter.save(model_dir)
-
-#
-# def convert(args):
-# 	assets = AssetManager(args.base_dir)
-# 	model_dir = assets.get_model_dir(args.model_name)
-# 	prediction_dir = assets.create_prediction_dir(args.model_name)
-#
-# 	with open(assets.get_preprocess_file_path(args.data_name), 'rb') as fd:
-# 		train_images = pickle.load(fd)
-#
-# 		for k in train_images.keys():
-# 			train_images[k] = (train_images[k] / 255) * 2 - 1
-#
-# 	face_converter = FaceConverter.load(model_dir)
-#
-# 	for i in range(args.num_of_samples):
-# 		source_identity_id = random.choice(list(train_images.keys()))
-# 		target_identity_id = random.choice(list(train_images.keys()))
-#
-# 		source_img = train_images[source_identity_id][0]
-# 		target_img = train_images[target_identity_id][0]
-#
-# 		converted_img = face_converter.converter.predict([
-# 			np.expand_dims(source_img, axis=0), np.expand_dims(target_img, axis=0)
-# 		])[0]
-#
-# 		merged_img = np.concatenate((source_img, target_img, converted_img), axis=1)
-# 		imageio.imwrite(os.path.join(prediction_dir, '%d.png' % i), merged_img)
 
 
 def main():
