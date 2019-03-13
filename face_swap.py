@@ -1,6 +1,5 @@
 import argparse
 import os
-import random
 import imageio
 
 import numpy as np
@@ -66,33 +65,21 @@ def train(args):
 def convert(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.get_model_dir(args.model_name)
-	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
 	prediction_dir = assets.create_prediction_dir(args.model_name)
 
 	face_converter = FaceConverter.load(model_dir)
 
-	imgs = dict()
-	for identity_file_name in os.listdir(preprocessed_dir):
-		identity_id = os.path.splitext(identity_file_name)[0]
-		identity_imgs = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs']
-		imgs[identity_id] = identity_imgs.astype(np.float64) / 255
+	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs']
 
-	identity_ids = list(imgs.keys())
 	for i in range(args.num_of_samples):
-		source_identity_id = random.choice(identity_ids)
-		idx = np.random.randint(0, imgs[source_identity_id].shape[0], size=1)
-		source_identity_img = imgs[source_identity_id][idx]
+		idx = np.random.choice(imgs.shape[0], size=2, replace=False)
+		source_img = imgs[idx[0]].astype(np.float64) / 255
+		target_img = imgs[idx[1]].astype(np.float64) / 255
 
-		target_identity_id = random.choice(identity_ids)
-		idx = np.random.randint(0, imgs[target_identity_id].shape[0], size=1)
-		target_identity_img = imgs[target_identity_id][idx]
+		converted_img = face_converter.converter.predict([source_img[np.newaxis, ...], target_img[np.newaxis, ...]])[0]
+		merged_img = np.concatenate((source_img, target_img, converted_img), axis=1)
 
-		converted_img = face_converter.converter.predict([
-			source_identity_img, target_identity_img
-		])
-
-		converted_merged_img = np.concatenate((source_identity_img[0], target_identity_img[0], converted_img[0]), axis=1)
-		imageio.imwrite(os.path.join(prediction_dir, '%d.png' % i), converted_merged_img)
+		imageio.imwrite(os.path.join(prediction_dir, '%d.png' % i), merged_img)
 
 
 def main():
@@ -117,7 +104,7 @@ def main():
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
-	train_parser.add_argument('-mi', '--max-images', type=int, default=10000000)
+	train_parser.add_argument('-mi', '--max-images', type=int, default=1000000)
 	train_parser.add_argument('-vgg', '--vgg-type', type=str, choices=('vgg-face', 'vgg'), required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
