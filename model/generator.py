@@ -20,6 +20,6 @@ class DataGenerator(Sequence):
 		imgs = imgs.astype(np.float64) / 255
 
 		x = [imgs, imgs]
-		y = self.__vgg.predict(imgs)
+		y = [imgs] + self.__vgg.predict(imgs)
 
 		return x, y

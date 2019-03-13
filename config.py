@@ -7,7 +7,7 @@ default_config = dict(
 	n_adain_layers=4,
 	adain_dim=256,
 
-	batch_size=64,
+	batch_size=128,
 	n_epochs=1000000000,
 	n_iterations_per_epoch=100,
 	n_epochs_per_checkpoint=50

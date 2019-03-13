@@ -120,7 +120,7 @@ class FaceConverter:
 		else:
 			vgg = vgg16.VGG16(include_top=False, input_shape=(64, 64, 3))
 
-		layer_ids = [1, 2, 5, 8, 13, 18]
+		layer_ids = [2, 5, 8, 13, 18]
 		layer_outputs = [vgg.layers[layer_id].output for layer_id in layer_ids]
 
 		base_model = Model(inputs=vgg.inputs, outputs=layer_outputs)
@@ -143,15 +143,15 @@ class FaceConverter:
 
 		self.vgg.trainable = False
 
-		model = Model(inputs=[source_img, identity_img], outputs=perceptual_codes, name='perceptual')
+		model = Model(inputs=[source_img, identity_img], outputs=[converted_img] + perceptual_codes, name='perceptual')
 
 		if n_gpus > 1:
 			model = multi_gpu_model(model, n_gpus)
 
 		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4),
-			loss=[losses.mean_absolute_error] * 6,
-			loss_weights=[1] * 6
+			optimizer=optimizers.Adam(lr=5e-4),
+			loss=[losses.mean_absolute_error] * (1 + 5),
+			loss_weights=[1] * (1 + 5)
 		)
 
 		print('perceptual arch:')
