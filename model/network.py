@@ -76,7 +76,7 @@ class FaceConverter:
 		self.decoder = decoder
 
 		self.converter = self.__build_converter()
-		self.vgg = self.__build_vgg()
+		# self.vgg = self.__build_vgg()
 
 	def train(self, imgs, batch_size, n_gpus,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
@@ -86,7 +86,7 @@ class FaceConverter:
 		checkpoint = MultiModelCheckpoint(saver=self, model_dir=model_dir, n_epochs=n_epochs_per_checkpoint)
 		lr_decay = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=1e-6, verbose=1)
 
-		data_generator = DataGenerator(self.vgg, imgs, batch_size, n_iterations_per_epoch)
+		data_generator = DataGenerator(imgs, batch_size, n_iterations_per_epoch)
 
 		model = self.__build_perceptual(n_gpus)
 		model.fit_generator(
@@ -139,19 +139,18 @@ class FaceConverter:
 		identity_img = Input(shape=self.config.img_shape)
 
 		converted_img = self.converter([source_img, identity_img])
-		perceptual_codes = self.vgg(converted_img)
+		# perceptual_codes = self.vgg(converted_img)
 
-		self.vgg.trainable = False
+		# self.vgg.trainable = False
 
-		model = Model(inputs=[source_img, identity_img], outputs=[converted_img] + perceptual_codes, name='perceptual')
+		model = Model(inputs=[source_img, identity_img], outputs=converted_img, name='perceptual')
 
 		if n_gpus > 1:
 			model = multi_gpu_model(model, n_gpus)
 
 		model.compile(
 			optimizer=optimizers.Adam(lr=5e-4),
-			loss=[losses.mean_absolute_error] * (1 + 5),
-			loss_weights=[1] * (1 + 5)
+			loss=losses.mean_absolute_error
 		)
 
 		print('perceptual arch:')
@@ -255,11 +254,11 @@ class FaceConverter:
 		content_code = Input(shape=(content_dim,))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
-		x = Dense(units=4*4*512)(content_code)
+		x = Dense(units=6*6*256)(content_code)
 		x = BatchNormalization()(x)
 		x = ReLU()(x)
 
-		x = Reshape(target_shape=(4, 4, 512))(x)
+		x = Reshape(target_shape=(6, 6, 256))(x)
 
 		for i in range(n_adain_layers):
 			x = UpSampling2D(size=(2, 2))(x)
@@ -271,7 +270,7 @@ class FaceConverter:
 		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
 		x = LeakyReLU()(x)
 
-		x = Conv2D(filters=3, kernel_size=(7, 7), padding='same')(x)
+		x = Conv2D(filters=1, kernel_size=(7, 7), padding='same')(x)
 		target_image = Activation('sigmoid')(x)
 
 		model = Model(inputs=[content_code, identity_adain_params], outputs=target_image, name='decoder')

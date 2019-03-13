@@ -4,9 +4,6 @@ import imageio
 
 import numpy as np
 
-import dataset
-from data import FacePreprocessor
-
 from assets import AssetManager
 from model.network import FaceConverter
 from config import default_config
@@ -14,17 +11,12 @@ from config import default_config
 
 def preprocess(args):
 	assets = AssetManager(args.base_dir)
-
-	face_set = dataset.get_dataset(args.dataset, args.dataset_path)
-	identity_map = face_set.get_identity_map()
-
-	face_preprocessor = FacePreprocessor(args.crop_size, args.target_size)
 	preprocessed_path = assets.get_preprocess_file_path(args.data_name)
 
-	identity_ids = list(identity_map.keys())[args.head_identity_index:args.tail_identity_index]
-	imgs = [face_preprocessor.preprocess_imgs(identity_map[identity]) for identity in identity_ids]
+	paths = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path)]
+	imgs = np.stack([imageio.imread(path) for path in paths], axis=0)
 
-	np.savez(preprocessed_path, imgs=np.concatenate(imgs, axis=0))
+	np.savez(preprocessed_path, imgs=imgs)
 
 
 def train(args):
@@ -32,7 +24,7 @@ def train(args):
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs'][:args.max_images]
+	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs'][:args.max_images][..., np.newaxis]
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
@@ -90,13 +82,8 @@ def main():
 	action_parsers.required = True
 
 	preprocess_parser = action_parsers.add_parser('preprocess')
-	preprocess_parser.add_argument('-ds', '--dataset', type=str, choices=dataset.supported_datasets, required=True)
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
-	preprocess_parser.add_argument('-hi', '--head-identity-index', type=int, required=True)
-	preprocess_parser.add_argument('-ti', '--tail-identity-index', type=int, required=True)
-	preprocess_parser.add_argument('-cs', '--crop-size', type=int, nargs=2, required=False)
-	preprocess_parser.add_argument('-ts', '--target-size', type=int, nargs=2, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
 
 	train_parser = action_parsers.add_parser('train')

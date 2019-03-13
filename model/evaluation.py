@@ -39,7 +39,7 @@ class EvaluationCallback(TensorBoard):
 	@staticmethod
 	def make_image(tensor):
 		height, width, channel = tensor.shape
-		image = Image.fromarray((tensor * 255).astype(np.uint8))
+		image = Image.fromarray((np.squeeze(tensor) * 255).astype(np.uint8))
 
 		with io.BytesIO() as out:
 			image.save(out, format='PNG')
