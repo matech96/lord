@@ -28,13 +28,8 @@ class AssetManager:
 		if not os.path.exists(self.__out_dir):
 			os.mkdir(self.__out_dir)
 
-	def get_preprocess_dir(self, data_name):
-		preprocess_dir = os.path.join(self.__preprocess_dir, data_name)
-
-		if not os.path.exists(preprocess_dir):
-			os.mkdir(preprocess_dir)
-
-		return preprocess_dir
+	def get_preprocess_file_path(self, data_name):
+		return os.path.join(self.__preprocess_dir, data_name + '.npz')
 
 	def get_model_dir(self, model_name):
 		return os.path.join(self.__models_dir, model_name)

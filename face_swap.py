@@ -20,15 +20,12 @@ def preprocess(args):
 	identity_map = face_set.get_identity_map()
 
 	face_preprocessor = FacePreprocessor(args.crop_size, args.target_size)
-	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
+	preprocessed_path = assets.get_preprocess_file_path(args.data_name)
 
 	identity_ids = list(identity_map.keys())[args.head_identity_index:args.tail_identity_index]
+	imgs = [face_preprocessor.preprocess_imgs(identity_map[identity]) for identity in identity_ids]
 
-	for i, identity in enumerate(identity_ids):
-		print('processing identity: %s' % identity)
-
-		identity_imgs = face_preprocessor.preprocess_imgs(identity_map[identity])
-		np.savez(os.path.join(preprocessed_dir, identity + '.npz'), imgs=identity_imgs)
+	np.savez(preprocessed_path, imgs=np.concatenate(imgs, axis=0))
 
 
 def train(args):
@@ -36,13 +33,7 @@ def train(args):
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	preprocessed_dir = assets.get_preprocess_dir(args.data_name)
-
-	imgs = dict()
-	for identity_file_name in os.listdir(preprocessed_dir)[:args.max_identities]:
-		identity_id = os.path.splitext(identity_file_name)[0]
-		identity_imgs = np.load(os.path.join(preprocessed_dir, identity_file_name))['imgs'][:args.max_files_per_identity]
-		imgs[identity_id] = identity_imgs.astype(np.float64) / 255
+	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs'][:args.max_images]
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
@@ -126,8 +117,7 @@ def main():
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
-	train_parser.add_argument('-mf', '--max-files-per-identity', type=int, default=50)
-	train_parser.add_argument('-mi', '--max-identities', type=int, default=10000)
+	train_parser.add_argument('-mi', '--max-images', type=int, default=10000000)
 	train_parser.add_argument('-vgg', '--vgg-type', type=str, choices=('vgg-face', 'vgg'), required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
