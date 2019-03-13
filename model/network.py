@@ -22,13 +22,12 @@ class FaceConverter:
 
 	class Config:
 
-		def __init__(self, img_shape, use_vgg_face):
+		def __init__(self, img_shape):
 			self.img_shape = img_shape
-			self.use_vgg_face = use_vgg_face
 
 	@classmethod
-	def build(cls, img_shape, content_dim, identity_dim, n_adain_layers, adain_dim, use_vgg_face):
-		config = FaceConverter.Config(img_shape, use_vgg_face)
+	def build(cls, img_shape, content_dim, identity_dim, n_adain_layers, adain_dim):
+		config = FaceConverter.Config(img_shape)
 
 		content_encoder = cls.__build_content_encoder(img_shape, content_dim)
 		identity_encoder = cls.__build_identity_encoder(img_shape, identity_dim)
@@ -76,7 +75,7 @@ class FaceConverter:
 		self.decoder = decoder
 
 		self.converter = self.__build_converter()
-		# self.vgg = self.__build_vgg()
+		self.vgg = self.__build_vgg()
 
 	def train(self, imgs, batch_size, n_gpus,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
@@ -86,7 +85,7 @@ class FaceConverter:
 		checkpoint = MultiModelCheckpoint(saver=self, model_dir=model_dir, n_epochs=n_epochs_per_checkpoint)
 		lr_decay = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=1e-6, verbose=1)
 
-		data_generator = DataGenerator(imgs, batch_size, n_iterations_per_epoch)
+		data_generator = DataGenerator(self.vgg, imgs, batch_size, n_iterations_per_epoch)
 
 		model = self.__build_perceptual(n_gpus)
 		model.fit_generator(
@@ -115,10 +114,7 @@ class FaceConverter:
 		return model
 
 	def __build_vgg(self):
-		if self.config.use_vgg_face:
-			vgg = vggface.VGGFace(model='vgg16', include_top=False, input_shape=(64, 64, 3))
-		else:
-			vgg = vgg16.VGG16(include_top=False, input_shape=(64, 64, 3))
+		vgg = vgg16.VGG16(include_top=False, input_shape=(96, 96, 3))
 
 		layer_ids = [2, 5, 8, 13, 18]
 		layer_outputs = [vgg.layers[layer_id].output for layer_id in layer_ids]
@@ -126,7 +122,7 @@ class FaceConverter:
 		base_model = Model(inputs=vgg.inputs, outputs=layer_outputs)
 
 		img = Input(shape=self.config.img_shape)
-		model = Model(inputs=img, outputs=base_model(NormalizeForVGG(self.config.use_vgg_face)(img)), name='vgg')
+		model = Model(inputs=img, outputs=base_model(NormalizeForVGG()(img)), name='vgg')
 
 		print('vgg arch:')
 		model.summary()
@@ -139,18 +135,19 @@ class FaceConverter:
 		identity_img = Input(shape=self.config.img_shape)
 
 		converted_img = self.converter([source_img, identity_img])
-		# perceptual_codes = self.vgg(converted_img)
+		perceptual_codes = self.vgg(converted_img)
 
-		# self.vgg.trainable = False
+		self.vgg.trainable = False
 
-		model = Model(inputs=[source_img, identity_img], outputs=converted_img, name='perceptual')
+		model = Model(inputs=[source_img, identity_img], outputs=[converted_img] + perceptual_codes, name='perceptual')
 
 		if n_gpus > 1:
 			model = multi_gpu_model(model, n_gpus)
 
 		model.compile(
 			optimizer=optimizers.Adam(lr=5e-4),
-			loss=losses.mean_absolute_error
+			loss=[losses.mean_absolute_error] * 6,
+			loss_weights=[1] * 6
 		)
 
 		print('perceptual arch:')
@@ -314,30 +311,12 @@ class AdaptiveInstanceNormalization(Layer):
 
 class NormalizeForVGG(Layer):
 
-	def __init__(self, vgg_face, **kwargs):
+	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
-
-		self.vgg_face = vgg_face
 
 	def call(self, inputs, **kwargs):
 		x = inputs * 255
 
-		if self.vgg_face:
-			r, g, b = tf.split(axis=3, num_or_size_splits=3, value=x)
+		x = tf.tile(x, (1, 1, 1, 3))
 
-			return tf.concat(axis=3, values=[
-				b - 93.5940,
-				g - 104.7624,
-				r - 129.1863,
-			])
-
-		else:
-			return vgg16.preprocess_input(x)
-
-	def get_config(self):
-		config = {
-			'vgg_face': self.vgg_face
-		}
-
-		base_config = super().get_config()
-		return dict(list(base_config.items()) + list(config.items()))
+		return vgg16.preprocess_input(x)

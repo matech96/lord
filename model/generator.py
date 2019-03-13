@@ -4,7 +4,8 @@ from keras.utils import Sequence
 
 class DataGenerator(Sequence):
 
-	def __init__(self, imgs, batch_size, n_batches_per_epoch):
+	def __init__(self, vgg, imgs, batch_size, n_batches_per_epoch):
+		self.__vgg = vgg
 		self.__imgs = imgs
 		self.__batch_size = batch_size
 		self.__n_batches_per_epoch = n_batches_per_epoch
@@ -19,6 +20,6 @@ class DataGenerator(Sequence):
 		imgs = imgs.astype(np.float64) / 255
 
 		x = [imgs, imgs]
-		y = imgs
+		y = [imgs] + self.__vgg.predict(imgs)
 
 		return x, y

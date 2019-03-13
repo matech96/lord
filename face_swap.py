@@ -33,9 +33,7 @@ def train(args):
 		identity_dim=args.identity_dim,
 
 		n_adain_layers=default_config['n_adain_layers'],
-		adain_dim=default_config['adain_dim'],
-
-		use_vgg_face=(args.vgg_type == 'vgg-face')
+		adain_dim=default_config['adain_dim']
 	)
 
 	face_converter.train(
