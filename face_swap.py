@@ -59,17 +59,19 @@ def convert(args):
 
 	face_converter = FaceConverter.load(model_dir)
 
-	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs']
+	target_img = imageio.imread(args.target_img_path)
+	target_img = target_img.astype(np.float64) / 255
 
-	for i in range(args.num_of_samples):
-		idx = np.random.choice(imgs.shape[0], size=2, replace=False)
-		source_img = imgs[idx[0]].astype(np.float64) / 255
-		target_img = imgs[idx[1]].astype(np.float64) / 255
+	for source_img_path in args.source_img_paths:
+		source_img = imageio.imread(source_img_path)
+		source_img = source_img.astype(np.float64) / 255
 
-		converted_img = face_converter.converter.predict([source_img[np.newaxis, ...], target_img[np.newaxis, ...]])[0]
+		converted_img = face_converter.converter.predict([
+			source_img[np.newaxis, ..., np.newaxis], target_img[np.newaxis, ..., np.newaxis]
+		])[0, ..., 0]
+
 		merged_img = np.concatenate((source_img, target_img, converted_img), axis=1)
-
-		imageio.imwrite(os.path.join(prediction_dir, '%d.png' % i), merged_img)
+		imageio.imwrite(os.path.join(prediction_dir, os.path.basename(source_img_path)), merged_img)
 
 
 def main():
@@ -90,14 +92,13 @@ def main():
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
 	train_parser.add_argument('-mi', '--max-images', type=int, default=1000000)
-	train_parser.add_argument('-vgg', '--vgg-type', type=str, choices=('vgg-face', 'vgg'), required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
 	convert_parser = action_parsers.add_parser('convert')
-	convert_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	convert_parser.add_argument('-sp', '--source-img-paths', type=str, nargs='+', required=True)
+	convert_parser.add_argument('-tp', '--target-img-path', type=str, required=True)
 	convert_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	convert_parser.add_argument('-ns', '--num-of-samples', type=int, required=True)
 	convert_parser.set_defaults(func=convert)
 
 	args = parser.parse_args()

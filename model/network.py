@@ -11,7 +11,6 @@ from keras.layers import Layer, Input, Reshape, Flatten
 from keras.models import Model, load_model
 from keras.utils import multi_gpu_model
 from keras.applications import vgg16
-from keras_vggface import vggface
 
 from model.generator import DataGenerator
 from model.checkpoint import MultiModelCheckpoint
