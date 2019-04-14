@@ -4,9 +4,6 @@ import imageio
 
 import numpy as np
 
-import dataset
-from data import FacePreprocessor
-
 from assets import AssetManager
 from model.network import FaceConverter
 from config import default_config
@@ -14,17 +11,12 @@ from config import default_config
 
 def preprocess(args):
 	assets = AssetManager(args.base_dir)
-
-	face_set = dataset.get_dataset(args.dataset, args.dataset_path)
-	identity_map = face_set.get_identity_map()
-
-	face_preprocessor = FacePreprocessor(args.crop_size, args.target_size)
 	preprocessed_path = assets.get_preprocess_file_path(args.data_name)
 
-	identity_ids = list(identity_map.keys())[args.head_identity_index:args.tail_identity_index]
-	imgs = [face_preprocessor.preprocess_imgs(identity_map[identity]) for identity in identity_ids]
+	paths = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path)]
+	imgs = np.stack([imageio.imread(path) for path in paths], axis=0)
 
-	np.savez(preprocessed_path, imgs=np.concatenate(imgs, axis=0))
+	np.savez(preprocessed_path, imgs=imgs)
 
 
 def train(args):
@@ -32,7 +24,7 @@ def train(args):
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs'][:args.max_images]
+	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs'][:args.max_images][..., np.newaxis]
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
@@ -41,9 +33,7 @@ def train(args):
 		identity_dim=args.identity_dim,
 
 		n_adain_layers=default_config['n_adain_layers'],
-		adain_dim=default_config['adain_dim'],
-
-		use_vgg_face=(args.vgg_type == 'vgg-face')
+		adain_dim=default_config['adain_dim']
 	)
 
 	face_converter.train(
@@ -69,17 +59,19 @@ def convert(args):
 
 	face_converter = FaceConverter.load(model_dir)
 
-	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs']
+	target_img = imageio.imread(args.target_img_path)
+	target_img = target_img.astype(np.float64) / 255
 
-	for i in range(args.num_of_samples):
-		idx = np.random.choice(imgs.shape[0], size=2, replace=False)
-		source_img = imgs[idx[0]].astype(np.float64) / 255
-		target_img = imgs[idx[1]].astype(np.float64) / 255
+	for source_img_path in args.source_img_paths:
+		source_img = imageio.imread(source_img_path)
+		source_img = source_img.astype(np.float64) / 255
 
-		converted_img = face_converter.converter.predict([source_img[np.newaxis, ...], target_img[np.newaxis, ...]])[0]
+		converted_img = face_converter.converter.predict([
+			source_img[np.newaxis, ..., np.newaxis], target_img[np.newaxis, ..., np.newaxis]
+		])[0, ..., 0]
+
 		merged_img = np.concatenate((source_img, target_img, converted_img), axis=1)
-
-		imageio.imwrite(os.path.join(prediction_dir, '%d.png' % i), merged_img)
+		imageio.imwrite(os.path.join(prediction_dir, os.path.basename(source_img_path)), merged_img)
 
 
 def main():
@@ -90,13 +82,8 @@ def main():
 	action_parsers.required = True
 
 	preprocess_parser = action_parsers.add_parser('preprocess')
-	preprocess_parser.add_argument('-ds', '--dataset', type=str, choices=dataset.supported_datasets, required=True)
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
-	preprocess_parser.add_argument('-hi', '--head-identity-index', type=int, required=True)
-	preprocess_parser.add_argument('-ti', '--tail-identity-index', type=int, required=True)
-	preprocess_parser.add_argument('-cs', '--crop-size', type=int, nargs=2, required=False)
-	preprocess_parser.add_argument('-ts', '--target-size', type=int, nargs=2, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
 
 	train_parser = action_parsers.add_parser('train')
@@ -105,14 +92,13 @@ def main():
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
 	train_parser.add_argument('-mi', '--max-images', type=int, default=1000000)
-	train_parser.add_argument('-vgg', '--vgg-type', type=str, choices=('vgg-face', 'vgg'), required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
 	convert_parser = action_parsers.add_parser('convert')
-	convert_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	convert_parser.add_argument('-sp', '--source-img-paths', type=str, nargs='+', required=True)
+	convert_parser.add_argument('-tp', '--target-img-path', type=str, required=True)
 	convert_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	convert_parser.add_argument('-ns', '--num-of-samples', type=int, required=True)
 	convert_parser.set_defaults(func=convert)
 
 	args = parser.parse_args()

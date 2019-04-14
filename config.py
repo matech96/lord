@@ -1,13 +1,10 @@
 default_config = dict(
-	img_shape=(64, 64, 3),
-
-	content_dim=32,
-	identity_dim=512,
+	img_shape=(96, 96, 1),
 
 	n_adain_layers=4,
 	adain_dim=256,
 
-	batch_size=128,
+	batch_size=32,
 	n_epochs=1000000000,
 	n_iterations_per_epoch=100,
 	n_epochs_per_checkpoint=50

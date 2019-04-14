@@ -11,7 +11,6 @@ from keras.layers import Layer, Input, Reshape, Flatten
 from keras.models import Model, load_model
 from keras.utils import multi_gpu_model
 from keras.applications import vgg16
-from keras_vggface import vggface
 
 from model.generator import DataGenerator
 from model.checkpoint import MultiModelCheckpoint
@@ -22,13 +21,12 @@ class FaceConverter:
 
 	class Config:
 
-		def __init__(self, img_shape, use_vgg_face):
+		def __init__(self, img_shape):
 			self.img_shape = img_shape
-			self.use_vgg_face = use_vgg_face
 
 	@classmethod
-	def build(cls, img_shape, content_dim, identity_dim, n_adain_layers, adain_dim, use_vgg_face):
-		config = FaceConverter.Config(img_shape, use_vgg_face)
+	def build(cls, img_shape, content_dim, identity_dim, n_adain_layers, adain_dim):
+		config = FaceConverter.Config(img_shape)
 
 		content_encoder = cls.__build_content_encoder(img_shape, content_dim)
 		identity_encoder = cls.__build_identity_encoder(img_shape, identity_dim)
@@ -115,10 +113,7 @@ class FaceConverter:
 		return model
 
 	def __build_vgg(self):
-		if self.config.use_vgg_face:
-			vgg = vggface.VGGFace(model='vgg16', include_top=False, input_shape=(64, 64, 3))
-		else:
-			vgg = vgg16.VGG16(include_top=False, input_shape=(64, 64, 3))
+		vgg = vgg16.VGG16(include_top=False, input_shape=(96, 96, 3))
 
 		layer_ids = [2, 5, 8, 13, 18]
 		layer_outputs = [vgg.layers[layer_id].output for layer_id in layer_ids]
@@ -126,7 +121,7 @@ class FaceConverter:
 		base_model = Model(inputs=vgg.inputs, outputs=layer_outputs)
 
 		img = Input(shape=self.config.img_shape)
-		model = Model(inputs=img, outputs=base_model(NormalizeForVGG(self.config.use_vgg_face)(img)), name='vgg')
+		model = Model(inputs=img, outputs=base_model(NormalizeForVGG()(img)), name='vgg')
 
 		print('vgg arch:')
 		model.summary()
@@ -150,8 +145,8 @@ class FaceConverter:
 
 		model.compile(
 			optimizer=optimizers.Adam(lr=5e-4),
-			loss=[losses.mean_absolute_error] * (1 + 5),
-			loss_weights=[1] * (1 + 5)
+			loss=[losses.mean_absolute_error] * 6,
+			loss_weights=[1] * 6
 		)
 
 		print('perceptual arch:')
@@ -255,11 +250,11 @@ class FaceConverter:
 		content_code = Input(shape=(content_dim,))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
-		x = Dense(units=4*4*512)(content_code)
+		x = Dense(units=6*6*256)(content_code)
 		x = BatchNormalization()(x)
 		x = ReLU()(x)
 
-		x = Reshape(target_shape=(4, 4, 512))(x)
+		x = Reshape(target_shape=(6, 6, 256))(x)
 
 		for i in range(n_adain_layers):
 			x = UpSampling2D(size=(2, 2))(x)
@@ -271,7 +266,7 @@ class FaceConverter:
 		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
 		x = LeakyReLU()(x)
 
-		x = Conv2D(filters=3, kernel_size=(7, 7), padding='same')(x)
+		x = Conv2D(filters=1, kernel_size=(7, 7), padding='same')(x)
 		target_image = Activation('sigmoid')(x)
 
 		model = Model(inputs=[content_code, identity_adain_params], outputs=target_image, name='decoder')
@@ -315,30 +310,12 @@ class AdaptiveInstanceNormalization(Layer):
 
 class NormalizeForVGG(Layer):
 
-	def __init__(self, vgg_face, **kwargs):
+	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
-
-		self.vgg_face = vgg_face
 
 	def call(self, inputs, **kwargs):
 		x = inputs * 255
 
-		if self.vgg_face:
-			r, g, b = tf.split(axis=3, num_or_size_splits=3, value=x)
+		x = tf.tile(x, (1, 1, 1, 3))
 
-			return tf.concat(axis=3, values=[
-				b - 93.5940,
-				g - 104.7624,
-				r - 129.1863,
-			])
-
-		else:
-			return vgg16.preprocess_input(x)
-
-	def get_config(self):
-		config = {
-			'vgg_face': self.vgg_face
-		}
-
-		base_config = super().get_config()
-		return dict(list(base_config.items()) + list(config.items()))
+		return vgg16.preprocess_input(x)
