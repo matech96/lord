@@ -1,9 +1,11 @@
 import argparse
 import os
 import imageio
+import pickle
 
 import numpy as np
 
+import dataset
 from assets import AssetManager
 from model.network import FaceConverter
 from config import default_config
@@ -11,12 +13,16 @@ from config import default_config
 
 def preprocess(args):
 	assets = AssetManager(args.base_dir)
-	preprocessed_path = assets.get_preprocess_file_path(args.data_name)
 
-	paths = [os.path.join(args.dataset_path, f) for f in os.listdir(args.dataset_path)]
-	imgs = np.stack([imageio.imread(path) for path in paths], axis=0)
+	img_dataset = dataset.get_dataset(args.dataset_id, args.dataset_path)
+	identity_map = img_dataset.get_identity_map()
 
-	np.savez(preprocessed_path, imgs=imgs)
+	imgs = dict()
+	for object_id in identity_map.keys():
+		imgs[object_id] = np.stack([imageio.imread(path) for path in identity_map[object_id]], axis=0)
+
+	with open(assets.get_preprocess_file_path(args.data_name), 'wb') as fd:
+		pickle.dump(imgs, fd)
 
 
 def train(args):
@@ -24,13 +30,13 @@ def train(args):
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	imgs = np.load(assets.get_preprocess_file_path(args.data_name))['imgs'][:args.max_images][..., np.newaxis]
+	with open(assets.get_preprocess_file_path(args.data_name), 'rb') as fd:
+		imgs = pickle.load(fd)
 
 	face_converter = FaceConverter.build(
 		img_shape=default_config['img_shape'],
 
 		content_dim=args.content_dim,
-		identity_dim=args.identity_dim,
 
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim']
@@ -39,7 +45,6 @@ def train(args):
 	face_converter.train(
 		imgs=imgs,
 		batch_size=default_config['batch_size'] * args.gpus,
-		n_gpus=args.gpus,
 
 		n_epochs=default_config['n_epochs'],
 		n_iterations_per_epoch=default_config['n_iterations_per_epoch'],
@@ -82,6 +87,7 @@ def main():
 	action_parsers.required = True
 
 	preprocess_parser = action_parsers.add_parser('preprocess')
+	preprocess_parser.add_argument('-di', '--dataset-id', type=str, choices=dataset.supported_datasets, required=True)
 	preprocess_parser.add_argument('-dp', '--dataset-path', type=str, required=True)
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
@@ -90,8 +96,6 @@ def main():
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
-	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
-	train_parser.add_argument('-mi', '--max-images', type=int, default=1000000)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 

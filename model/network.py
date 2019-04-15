@@ -1,19 +1,17 @@
 import os
 import pickle
+import random
 
+import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras import optimizers
 from keras import losses
-from keras.callbacks import ReduceLROnPlateau
-from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, BatchNormalization, ReLU, LeakyReLU, Activation
-from keras.layers import Layer, Input, Reshape, Flatten
+from keras.layers import Conv2D, Dense, UpSampling2D, ReLU, LeakyReLU, Activation, Lambda
+from keras.layers import Layer, Input, Reshape
 from keras.models import Model, load_model
-from keras.utils import multi_gpu_model
 from keras.applications import vgg16
 
-from model.generator import DataGenerator
-from model.checkpoint import MultiModelCheckpoint
 from model.evaluation import EvaluationCallback
 
 
@@ -21,20 +19,18 @@ class FaceConverter:
 
 	class Config:
 
-		def __init__(self, img_shape):
+		def __init__(self, img_shape, content_dim, n_adain_layers, adain_dim):
 			self.img_shape = img_shape
+			self.content_dim = content_dim
+			self.n_adain_layers = n_adain_layers
+			self.adain_dim = adain_dim
 
 	@classmethod
-	def build(cls, img_shape, content_dim, identity_dim, n_adain_layers, adain_dim):
-		config = FaceConverter.Config(img_shape)
+	def build(cls, img_shape, content_dim, n_adain_layers, adain_dim):
+		config = FaceConverter.Config(img_shape, content_dim, n_adain_layers, adain_dim)
+		generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim)
 
-		content_encoder = cls.__build_content_encoder(img_shape, content_dim)
-		identity_encoder = cls.__build_identity_encoder(img_shape, identity_dim)
-		mlp = cls.__build_mlp(identity_dim, n_adain_layers, adain_dim)
-
-		decoder = cls.__build_decoder(content_dim, n_adain_layers, adain_dim)
-
-		return FaceConverter(config, content_encoder, identity_encoder, mlp, decoder)
+		return FaceConverter(config, generator)
 
 	@classmethod
 	def load(cls, model_dir):
@@ -43,15 +39,11 @@ class FaceConverter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
 			config = pickle.load(config_fd)
 
-		content_encoder = load_model(os.path.join(model_dir, 'content_encoder.h5py'))
-		identity_encoder = load_model(os.path.join(model_dir, 'identity_encoder.h5py'))
-		mlp = load_model(os.path.join(model_dir, 'mlp.h5py'))
-
-		decoder = load_model(os.path.join(model_dir, 'decoder.h5py'), custom_objects={
+		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
 
-		return FaceConverter(config, content_encoder, identity_encoder, mlp, decoder)
+		return FaceConverter(config, generator)
 
 	def save(self, model_dir):
 		print('saving models...')
@@ -59,199 +51,83 @@ class FaceConverter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'wb') as config_fd:
 			pickle.dump(self.config, config_fd)
 
-		self.content_encoder.save(os.path.join(model_dir, 'content_encoder.h5py'))
-		self.identity_encoder.save(os.path.join(model_dir, 'identity_encoder.h5py'))
-		self.mlp.save(os.path.join(model_dir, 'mlp.h5py'))
+		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
 
-		self.decoder.save(os.path.join(model_dir, 'decoder.h5py'))
-
-	def __init__(self, config, content_encoder, identity_encoder, mlp, decoder):
+	def __init__(self, config, generator):
 		self.config = config
+		self.generator = generator
 
-		self.content_encoder = content_encoder
-		self.identity_encoder = identity_encoder
-		self.mlp = mlp
-		self.decoder = decoder
-
-		self.converter = self.__build_converter()
-		self.vgg = self.__build_vgg()
-
-	def train(self, imgs, batch_size, n_gpus,
+	def train(self, imgs, batch_size,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
-		evaluation_callback = EvaluationCallback(self, imgs, tensorboard_dir)
-		checkpoint = MultiModelCheckpoint(saver=self, model_dir=model_dir, n_epochs=n_epochs_per_checkpoint)
-		lr_decay = ReduceLROnPlateau(monitor='loss', factor=0.5, patience=50, min_lr=1e-6, verbose=1)
+		pose_codes = dict()
+		for object_id, object_imgs in imgs.items():
+			pose_codes[object_id] = np.random.random(size=(object_imgs.shape[0], self.config.content_dim)).astype(np.float32)
 
-		data_generator = DataGenerator(self.vgg, imgs, batch_size, n_iterations_per_epoch)
+		identity_codes = dict()
+		for object_id in imgs.keys():
+			identity_codes[object_id] = np.random.random(size=(1, self.config.n_adain_layers, self.config.adain_dim, 2)).astype(np.float32)
 
-		model = self.__build_perceptual(n_gpus)
-		model.fit_generator(
-			data_generator, epochs=n_epochs,
-			callbacks=[evaluation_callback, checkpoint, lr_decay], verbose=1
+		pose_code = K.variable(value=np.zeros(shape=(1, self.config.content_dim)), dtype=np.float32)
+		identity_code = K.variable(value=np.zeros(shape=(1, self.config.n_adain_layers, self.config.adain_dim, 2)), dtype=np.float32)
+
+		gamma = 1e-3
+		target_img = K.placeholder(shape=(1, *self.config.img_shape))
+		loss = K.mean(K.abs(self.generator([pose_code, identity_code]) - target_img)) # + gamma * K.sum(K.square(pose_code))
+
+		z_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5)
+
+		f = K.function(
+			inputs=[target_img], outputs=[loss],
+			updates=z_optimizer.get_updates(loss, [pose_code, identity_code])
 		)
 
-	def __build_converter(self):
-		source_img = Input(shape=self.config.img_shape)
-		identity_img = Input(shape=self.config.img_shape)
+		evaluation_callback = EvaluationCallback(pose_codes, identity_codes, tensorboard_dir)
+		evaluation_callback.set_model(self.generator)
 
-		content_code = self.content_encoder(source_img)
+		for e in range(n_epochs):
+			for i in range(n_iterations_per_epoch):
+				object_id = random.choice(list(imgs.keys()))
+				idx = np.random.choice(imgs[object_id].shape[0], size=1)
 
-		identity_code = self.identity_encoder(identity_img)
-		identity_adain_params = self.mlp(identity_code)
+				imgs_batch = imgs[object_id][idx]
+				imgs_batch = imgs_batch.astype(np.float64) / 255
 
-		model = Model(
-			inputs=[source_img, identity_img],
-			outputs=self.decoder([content_code, identity_adain_params]),
-			name='converter'
-		)
+				pose_codes_batch = pose_codes[object_id][idx]
+				identity_codes_batch = identity_codes[object_id]
 
-		print('converter arch:')
-		model.summary()
+				loss_val = self.generator.train_on_batch(x=[pose_codes_batch, identity_codes_batch], y=imgs_batch)
+				print('loss: %f' % loss_val)
 
-		return model
+				K.set_value(pose_code, pose_codes_batch)
+				K.set_value(identity_code, identity_codes_batch)
 
-	def __build_vgg(self):
-		vgg = vgg16.VGG16(include_top=False, input_shape=(96, 96, 3))
+				z_loss_val = f([imgs_batch])[0]
+				print('z-loss: %f' % z_loss_val)
 
-		layer_ids = [2, 5, 8, 13, 18]
-		layer_outputs = [vgg.layers[layer_id].output for layer_id in layer_ids]
+				# TODO: gradient clipping?
 
-		base_model = Model(inputs=vgg.inputs, outputs=layer_outputs)
+				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1))
+				# pose_codes_batch = pose_codes_batch / norm[:, np.newaxis]
+				#
+				# norm = np.sqrt(np.sum(identity_codes_batch ** 2, axis=1))
+				# identity_codes_batch = identity_codes_batch / norm[:, np.newaxis]
 
-		img = Input(shape=self.config.img_shape)
-		model = Model(inputs=img, outputs=base_model(NormalizeForVGG()(img)), name='vgg')
+				pose_codes[object_id][idx] = K.get_value(pose_code)
+				identity_codes[object_id] = K.get_value(identity_code)
 
-		print('vgg arch:')
-		model.summary()
+			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val})
+			# TODO: save model and codes
 
-		model._make_predict_function()
-		return model
-
-	def __build_perceptual(self, n_gpus):
-		source_img = Input(shape=self.config.img_shape)
-		identity_img = Input(shape=self.config.img_shape)
-
-		converted_img = self.converter([source_img, identity_img])
-		perceptual_codes = self.vgg(converted_img)
-
-		self.vgg.trainable = False
-
-		model = Model(inputs=[source_img, identity_img], outputs=[converted_img] + perceptual_codes, name='perceptual')
-
-		if n_gpus > 1:
-			model = multi_gpu_model(model, n_gpus)
-
-		model.compile(
-			optimizer=optimizers.Adam(lr=5e-4),
-			loss=[losses.mean_absolute_error] * 6,
-			loss_weights=[1] * 6
-		)
-
-		print('perceptual arch:')
-		model.summary()
-
-		return model
+		evaluation_callback.on_train_end(None)
 
 	@classmethod
-	def __build_content_encoder(cls, img_shape, content_dim):
-		image = Input(shape=img_shape)
-
-		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(image)
-		x = BatchNormalization()(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=512, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=512, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
-		x = ReLU()(x)
-
-		x = Flatten()(x)
-
-		for i in range(2):
-			x = Dense(units=256)(x)
-			x = BatchNormalization()(x)
-			x = ReLU()(x)
-
-		content_code = Dense(units=content_dim)(x)
-
-		model = Model(inputs=image, outputs=content_code, name='content-encoder')
-
-		print('content-encoder arch:')
-		model.summary()
-
-		return model
-
-	@classmethod
-	def __build_identity_encoder(cls, img_shape, identity_dim):
-		image = Input(shape=img_shape)
-
-		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(image)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = ReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = ReLU()(x)
-
-		x = GlobalAveragePooling2D()(x)
-
-		identity_code = Dense(units=identity_dim)(x)
-
-		model = Model(inputs=image, outputs=identity_code, name='identity-encoder')
-
-		print('identity-encoder arch:')
-		model.summary()
-
-		return model
-
-	@classmethod
-	def __build_mlp(cls, identity_dim, n_adain_layers, adain_dim):
-		identity_code = Input(shape=(identity_dim,))
-
-		x = Dense(units=adain_dim)(identity_code)
-		x = ReLU()(x)
-
-		for i in range(3):
-			x = Dense(units=adain_dim)(x)
-			x = ReLU()(x)
-
-		adain_params = Dense(units=n_adain_layers * adain_dim * 2)(x)
-		adain_params = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(adain_params)
-
-		model = Model(inputs=identity_code, outputs=adain_params, name='mlp')
-
-		print('mlp arch:')
-		model.summary()
-
-		return model
-
-	@classmethod
-	def __build_decoder(cls, content_dim, n_adain_layers, adain_dim):
+	def __build_generator(cls, content_dim, n_adain_layers, adain_dim):
 		content_code = Input(shape=(content_dim,))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
 		x = Dense(units=6*6*256)(content_code)
-		x = BatchNormalization()(x)
 		x = ReLU()(x)
 
 		x = Reshape(target_shape=(6, 6, 256))(x)
@@ -267,9 +143,15 @@ class FaceConverter:
 		x = LeakyReLU()(x)
 
 		x = Conv2D(filters=1, kernel_size=(7, 7), padding='same')(x)
-		target_image = Activation('sigmoid')(x)
+		x = Activation('sigmoid')(x)
 
-		model = Model(inputs=[content_code, identity_adain_params], outputs=target_image, name='decoder')
+		target_img = Lambda(lambda t: K.squeeze(t, axis=-1))(x)
+
+		model = Model(inputs=[content_code, identity_adain_params], outputs=target_img, name='generator')
+		model.compile(
+			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5),
+			loss=losses.mean_absolute_error
+		)
 
 		print('decoder arch:')
 		model.summary()
@@ -306,16 +188,3 @@ class AdaptiveInstanceNormalization(Layer):
 
 		base_config = super().get_config()
 		return dict(list(base_config.items()) + list(config.items()))
-
-
-class NormalizeForVGG(Layer):
-
-	def __init__(self, **kwargs):
-		super().__init__(**kwargs)
-
-	def call(self, inputs, **kwargs):
-		x = inputs * 255
-
-		x = tf.tile(x, (1, 1, 1, 3))
-
-		return vgg16.preprocess_input(x)
