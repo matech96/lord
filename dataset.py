@@ -1,21 +1,25 @@
 import os
+import re
 from abc import ABC, abstractmethod
 
 
-supported_datasets = ['celeba', 'vggface2']
+supported_datasets = ['smallnorb', 'celeba', 'vggface2']
 
 
-def get_dataset(name, path):
-	if name == 'celeba':
+def get_dataset(dataset_id, path):
+	if dataset_id == 'smallnorb':
+		return SmallNorb(path)
+
+	if dataset_id == 'celeba':
 		return CelebA(path)
 
-	if name == 'vggface2':
+	if dataset_id == 'vggface2':
 		return VggFace2(path)
 
-	raise Exception('unsupported dataset: %s' % name)
+	raise Exception('unsupported dataset: %s' % dataset_id)
 
 
-class FaceSet(ABC):
+class DataSet(ABC):
 
 	def __init__(self, base_dir):
 		super().__init__()
@@ -26,7 +30,31 @@ class FaceSet(ABC):
 		pass
 
 
-class CelebA(FaceSet):
+class SmallNorb(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__imgs_dir = os.path.join(self._base_dir, 'train')
+
+	def get_identity_map(self):
+		identity_map = dict()
+
+		regex = re.compile('(\d+)_(\w+)_(\d+)_(\w+).jpg')
+		for file_name in os.listdir(self.__imgs_dir):
+			img_path = os.path.join(self.__imgs_dir, file_name)
+			img_id, category, instance, lt_rt = regex.match(file_name).groups()
+
+			object_id = '%s_%s' % (category, instance)
+			if object_id not in identity_map:
+				identity_map[object_id] = list()
+
+			identity_map[object_id].append(img_path)
+
+		return identity_map
+
+
+class CelebA(DataSet):
 
 	def __init__(self, base_dir):
 		super().__init__(base_dir)
@@ -51,7 +79,7 @@ class CelebA(FaceSet):
 		return identity_map
 
 
-class VggFace2(FaceSet):
+class VggFace2(DataSet):
 
 	def __init__(self, base_dir):
 		super().__init__(base_dir)
