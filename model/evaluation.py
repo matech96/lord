@@ -40,11 +40,11 @@ class EvaluationCallback(TensorBoard):
 
 	@staticmethod
 	def make_image(tensor):
-		height, width = tensor.shape
+		height, width, channels = tensor.shape
 		image = Image.fromarray((np.squeeze(tensor) * 255).astype(np.uint8))
 
 		with io.BytesIO() as out:
 			image.save(out, format='PNG')
 			image_string = out.getvalue()
 
-		return tf.Summary.Image(height=height, width=width, colorspace=1, encoded_image_string=image_string)
+		return tf.Summary.Image(height=height, width=width, colorspace=channels, encoded_image_string=image_string)
