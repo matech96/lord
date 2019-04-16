@@ -6,8 +6,7 @@ import numpy as np
 import tensorflow as tf
 from keras import backend as K
 from keras import optimizers
-from keras import losses
-from keras.layers import Conv2D, Dense, UpSampling2D, ReLU, LeakyReLU, Activation
+from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape
 from keras.models import Model, load_model
 from keras.applications import vgg16
@@ -57,8 +56,6 @@ class FaceConverter:
 		self.config = config
 		self.generator = generator
 
-		self.vgg = self.__build_vgg()
-
 	def train(self, imgs, batch_size,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
@@ -90,18 +87,23 @@ class FaceConverter:
 		evaluation_callback = EvaluationCallback(tensorboard_dir)
 		evaluation_callback.set_model(self.generator)
 
+		pose_codes_batch = np.empty(shape=(batch_size, self.config.content_dim), dtype=np.float32)
+		identity_codes_batch = np.empty(shape=(batch_size, self.config.n_adain_layers, self.config.adain_dim, 2), dtype=np.float32)
+		imgs_batch = np.empty(shape=(batch_size, *self.config.img_shape), dtype=np.float32)
+		img_ids = np.empty(shape=(batch_size, ), dtype=np.uint32)
+
 		pose_codes, identity_codes = self.__init_codes(imgs)
 
 		for e in range(n_epochs):
 			for i in range(n_iterations_per_epoch):
-				object_id = random.choice(list(imgs.keys()))
-				idx = np.random.choice(imgs[object_id].shape[0], size=batch_size)
+				object_ids = random.sample(imgs.keys(), k=batch_size)
 
-				imgs_batch = imgs[object_id][idx][..., np.newaxis]
-				imgs_batch = imgs_batch.astype(np.float64) / 255
+				for b in range(batch_size):
+					img_ids[b] = np.random.choice(imgs[object_ids[b]].shape[0], size=1)
 
-				pose_codes_batch = pose_codes[object_id][idx]
-				identity_codes_batch = np.tile(identity_codes[object_id], reps=(batch_size, 1, 1, 1))
+					pose_codes_batch[b] = pose_codes[object_ids[b]][img_ids[b]]
+					identity_codes_batch[b] = identity_codes[object_ids[b]]
+					imgs_batch[b] = imgs[object_ids[b]][img_ids[b]][..., np.newaxis] / 255.0
 
 				K.set_value(pose_code, pose_codes_batch)
 				K.set_value(identity_code, identity_codes_batch)
@@ -112,8 +114,12 @@ class FaceConverter:
 				# TODO: gradient clipping?
 				# TODO: code normalization?
 
-				pose_codes[object_id][idx] = K.get_value(pose_code)
-				identity_codes[object_id] = np.mean(K.get_value(identity_code), axis=0, keepdims=True)
+				pose_codes_batch = K.get_value(pose_code)
+				identity_codes_batch = K.get_value(identity_code)
+
+				for b in range(batch_size):
+					pose_codes[object_ids[b]][img_ids[b]] = pose_codes_batch[b]
+					identity_codes[object_ids[b]] = identity_codes_batch[b]
 
 			evaluation_callback.call(epoch=e, logs={'loss': loss_val[0]}, pose_codes=pose_codes, identity_codes=identity_codes)
 			# TODO: save model and codes
@@ -127,7 +133,7 @@ class FaceConverter:
 
 		identity_codes = dict()
 		for object_id in imgs.keys():
-			identity_codes[object_id] = np.random.random(size=(1, self.config.n_adain_layers, self.config.adain_dim, 2)).astype(np.float32)
+			identity_codes[object_id] = np.random.random(size=(self.config.n_adain_layers, self.config.adain_dim, 2)).astype(np.float32)
 
 		return pose_codes, identity_codes
 
@@ -175,7 +181,6 @@ class FaceConverter:
 		print('vgg arch:')
 		model.summary()
 
-		model._make_predict_function()
 		return model
 
 

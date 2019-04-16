@@ -17,10 +17,10 @@ class EvaluationCallback(TensorBoard):
 		super().on_epoch_end(epoch, logs)
 
 		object_id_a = random.choice(list(identity_codes.keys()))
-		identity_code_a = identity_codes[object_id_a]
+		identity_code_a = identity_codes[object_id_a][np.newaxis, ...]
 
 		object_id_b = random.choice(list(identity_codes.keys()))
-		identity_code_b = identity_codes[object_id_b]
+		identity_code_b = identity_codes[object_id_b][np.newaxis, ...]
 
 		idx_a = np.random.choice(pose_codes[object_id_a].shape[0], size=1)
 		pose_code_a = pose_codes[object_id_a][idx_a]
@@ -33,7 +33,10 @@ class EvaluationCallback(TensorBoard):
 		img_a_b = self.model.predict([pose_code_a, identity_code_b])[0]
 		img_b_b = self.model.predict([pose_code_b, identity_code_b])[0]
 
-		merged_img = np.concatenate((img_a_a, img_b_a, img_a_b, img_b_b), axis=1)
+		merged_img = np.concatenate((
+			np.concatenate((img_a_a, img_b_a), axis=1),
+			np.concatenate((img_a_b, img_b_b), axis=1)
+		), axis=0)
 
 		summary = tf.Summary(value=[tf.Summary.Value(tag='sample', image=self.make_image(merged_img))])
 
