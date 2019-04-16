@@ -58,36 +58,39 @@ class FaceConverter:
 		self.generator = generator
 
 		self.vgg = self.__build_vgg()
-		self.perceptual = self.__build_perceptual()
 
 	def train(self, imgs, batch_size,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
-		pose_codes = dict()
-		for object_id, object_imgs in imgs.items():
-			pose_codes[object_id] = np.random.random(size=(object_imgs.shape[0], self.config.content_dim)).astype(np.float32)
-
-		identity_codes = dict()
-		for object_id in imgs.keys():
-			identity_codes[object_id] = np.random.random(size=(1, self.config.n_adain_layers, self.config.adain_dim, 2)).astype(np.float32)
-
-		pose_code = K.variable(value=np.zeros(shape=(batch_size, self.config.content_dim)), dtype=np.float32)
-		identity_code = K.variable(value=np.zeros(shape=(batch_size, self.config.n_adain_layers, self.config.adain_dim, 2)), dtype=np.float32)
-
-		gamma = 1e-3
-		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
-		loss = K.mean(K.abs(self.generator([pose_code, identity_code]) - target_img)) # + gamma * K.sum(K.square(pose_code))
-
-		z_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5)
-
-		f = K.function(
-			inputs=[target_img], outputs=[loss],
-			updates=z_optimizer.get_updates(loss, [pose_code, identity_code])
+		pose_code = K.variable(
+			value=np.zeros(shape=(batch_size, self.config.content_dim)),
+			dtype=np.float32
 		)
 
-		evaluation_callback = EvaluationCallback(pose_codes, identity_codes, tensorboard_dir)
+		identity_code = K.variable(
+			value=np.zeros(shape=(batch_size, self.config.n_adain_layers, self.config.adain_dim, 2)),
+			dtype=np.float32
+		)
+
+		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
+		loss = K.mean(K.abs(self.generator([pose_code, identity_code]) - target_img))  # TODO: regularize pose code
+
+		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
+		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
+
+		train_function = K.function(
+			inputs=[target_img], outputs=[loss],
+			updates=(
+				generator_optimizer.get_updates(loss, self.generator.trainable_weights)
+				+ z_optimizer.get_updates(loss, [pose_code, identity_code])
+			)
+		)
+
+		evaluation_callback = EvaluationCallback(tensorboard_dir)
 		evaluation_callback.set_model(self.generator)
+
+		pose_codes, identity_codes = self.__init_codes(imgs)
 
 		for e in range(n_epochs):
 			for i in range(n_iterations_per_epoch):
@@ -100,56 +103,33 @@ class FaceConverter:
 				pose_codes_batch = pose_codes[object_id][idx]
 				identity_codes_batch = np.tile(identity_codes[object_id], reps=(batch_size, 1, 1, 1))
 
-				loss_val = self.perceptual.train_on_batch(
-					x=[pose_codes_batch, identity_codes_batch],
-					y=[imgs_batch] + self.vgg.predict(imgs_batch)
-				)
-
-				print('loss: %f' % loss_val[0])
-
 				K.set_value(pose_code, pose_codes_batch)
 				K.set_value(identity_code, identity_codes_batch)
 
-				z_loss_val = f([imgs_batch])[0]
-				print('z-loss: %f' % z_loss_val)
+				loss_val = train_function([imgs_batch])
+				print('loss: %f' % loss_val[0])
 
 				# TODO: gradient clipping?
-
-				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1))
-				# pose_codes_batch = pose_codes_batch / norm[:, np.newaxis]
-				#
-				# norm = np.sqrt(np.sum(identity_codes_batch ** 2, axis=1))
-				# identity_codes_batch = identity_codes_batch / norm[:, np.newaxis]
+				# TODO: code normalization?
 
 				pose_codes[object_id][idx] = K.get_value(pose_code)
 				identity_codes[object_id] = np.mean(K.get_value(identity_code), axis=0, keepdims=True)
 
-			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val[0]})
+			evaluation_callback.call(epoch=e, logs={'loss': loss_val[0]}, pose_codes=pose_codes, identity_codes=identity_codes)
 			# TODO: save model and codes
 
 		evaluation_callback.on_train_end(None)
 
-	def __build_perceptual(self):
-		content_code = Input(shape=(self.config.content_dim,))
-		identity_adain_params = Input(shape=(self.config.n_adain_layers, self.config.adain_dim, 2))
+	def __init_codes(self, imgs):
+		pose_codes = dict()
+		for object_id, object_imgs in imgs.items():
+			pose_codes[object_id] = np.random.random(size=(object_imgs.shape[0], self.config.content_dim)).astype(np.float32)
 
-		target_img = self.generator([content_code, identity_adain_params])
-		perceptual_codes = self.vgg(target_img)
+		identity_codes = dict()
+		for object_id in imgs.keys():
+			identity_codes[object_id] = np.random.random(size=(1, self.config.n_adain_layers, self.config.adain_dim, 2)).astype(np.float32)
 
-		self.vgg.trainable = False
-
-		model = Model(inputs=[content_code, identity_adain_params], outputs=[target_img] + perceptual_codes, name='perceptual')
-
-		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5),
-			loss=[losses.mean_absolute_error] + [losses.mean_absolute_error] * 5,
-			loss_weights=[1] + [1] * 5
-		)
-
-		print('perceptual arch:')
-		model.summary()
-
-		return model
+		return pose_codes, identity_codes
 
 	@classmethod
 	def __build_generator(cls, content_dim, n_adain_layers, adain_dim):

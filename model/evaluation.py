@@ -10,28 +10,30 @@ from keras.callbacks import TensorBoard
 
 class EvaluationCallback(TensorBoard):
 
-	def __init__(self, pose_codes, identity_codes, tensorboard_dir):
+	def __init__(self, tensorboard_dir):
 		super().__init__(log_dir=tensorboard_dir)
 
-		self.__pose_codes = pose_codes
-		self.__identity_codes = identity_codes
-
-	def on_epoch_end(self, epoch, logs={}):
+	def call(self, epoch, logs, pose_codes, identity_codes):
 		super().on_epoch_end(epoch, logs)
 
-		object_id = random.choice(list(self.__identity_codes.keys()))
-		identity_code = self.__identity_codes[object_id]
+		object_id_a = random.choice(list(identity_codes.keys()))
+		identity_code_a = identity_codes[object_id_a]
 
-		idx = np.random.choice(self.__pose_codes[object_id].shape[0], size=1)
-		pose_code_a = self.__pose_codes[object_id][idx]
+		object_id_b = random.choice(list(identity_codes.keys()))
+		identity_code_b = identity_codes[object_id_b]
 
-		idx = np.random.choice(self.__pose_codes[object_id].shape[0], size=1)
-		pose_code_b = self.__pose_codes[object_id][idx]
+		idx_a = np.random.choice(pose_codes[object_id_a].shape[0], size=1)
+		pose_code_a = pose_codes[object_id_a][idx_a]
 
-		img_a = self.model.predict([pose_code_a, identity_code])[0]
-		img_b = self.model.predict([pose_code_b, identity_code])[0]
+		idx_b = np.random.choice(pose_codes[object_id_b].shape[0], size=1)
+		pose_code_b = pose_codes[object_id_b][idx_b]
 
-		merged_img = np.concatenate((img_a, img_b), axis=1)
+		img_a_a = self.model.predict([pose_code_a, identity_code_a])[0]
+		img_b_a = self.model.predict([pose_code_b, identity_code_a])[0]
+		img_a_b = self.model.predict([pose_code_a, identity_code_b])[0]
+		img_b_b = self.model.predict([pose_code_b, identity_code_b])[0]
+
+		merged_img = np.concatenate((img_a_a, img_b_a, img_a_b, img_b_b), axis=1)
 
 		summary = tf.Summary(value=[tf.Summary.Value(tag='sample', image=self.make_image(merged_img))])
 
