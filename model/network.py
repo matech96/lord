@@ -4,10 +4,11 @@ import random
 
 import numpy as np
 import tensorflow as tf
+
 from keras import backend as K
 from keras import optimizers
 from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation
-from keras.layers import Layer, Input, Reshape
+from keras.layers import Layer, Input, Reshape, Flatten, Concatenate
 from keras.models import Model, load_model
 from keras.applications import vgg16
 
@@ -56,6 +57,8 @@ class FaceConverter:
 		self.config = config
 		self.generator = generator
 
+		# self.vgg = self.__build_vgg()
+
 	def train(self, imgs, batch_size,
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
@@ -71,7 +74,14 @@ class FaceConverter:
 		)
 
 		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
-		loss = K.mean(K.abs(self.generator([pose_code, identity_code]) - target_img))  # TODO: regularize pose code
+		generated_img = self.generator([pose_code, identity_code])
+
+		# target_perceptual_codes = self.vgg(target_img)
+		# generated_perceptual_codes = self.vgg(generated_img)
+
+		# loss = K.mean(K.abs(generated_img - target_img)) + K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
+		loss = K.mean(K.abs(generated_img - target_img))
+		# TODO: regularize pose code
 
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
 		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
@@ -171,9 +181,9 @@ class FaceConverter:
 		vgg = vgg16.VGG16(include_top=False, input_shape=(self.config.img_shape[0], self.config.img_shape[1], 3))
 
 		layer_ids = [2, 5, 8, 13, 18]
-		layer_outputs = [vgg.layers[layer_id].output for layer_id in layer_ids]
+		layer_outputs = [Flatten()(vgg.layers[layer_id].output) for layer_id in layer_ids]
 
-		base_model = Model(inputs=vgg.inputs, outputs=layer_outputs)
+		base_model = Model(inputs=vgg.inputs, outputs=Concatenate(axis=-1)(layer_outputs))
 
 		img = Input(shape=self.config.img_shape)
 		model = Model(inputs=img, outputs=base_model(NormalizeForVGG()(img)), name='vgg')
