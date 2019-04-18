@@ -64,11 +64,12 @@ class Converter:
 
 	def __init__(self, config, pose_embedding, identity_embedding, generator):
 		self.config = config
+
 		self.pose_embedding = pose_embedding
 		self.identity_embedding = identity_embedding
 		self.generator = generator
 
-		# self.vgg = self.__build_vgg()
+		self.vgg = self.__build_vgg()
 
 	def train(self, imgs, identities,
 			  batch_size, n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
@@ -82,15 +83,14 @@ class Converter:
 		identity_code = self.identity_embedding(identity)
 		generated_img = self.generator([pose_code, identity_code])
 
-		# target_perceptual_codes = self.vgg(target_img)
-		# generated_perceptual_codes = self.vgg(generated_img)
+		target_perceptual_codes = self.vgg(target_img)
+		generated_perceptual_codes = self.vgg(generated_img)
 
-		# loss = K.mean(K.abs(generated_img - target_img)) + K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
-		loss = K.mean(K.abs(generated_img - target_img))
+		loss = K.mean(K.abs(generated_img - target_img)) + K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
 		# TODO: regularize pose code
 
-		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
-		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
+		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
+		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
 
 		train_function = K.function(
 			inputs=[img_id, identity, target_img], outputs=[loss],
@@ -107,13 +107,15 @@ class Converter:
 		for e in range(n_epochs):
 			for i in range(n_iterations_per_epoch):
 				idx = np.random.choice(imgs.shape[0], size=batch_size)
-
 				loss_val = train_function([idx, identities[idx], imgs[idx]])
-				print('loss: %f' % loss_val[0])
 
 				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1, keepdims=True))
 				# pose_codes_batch = pose_codes_batch / norm
 
+			K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
+			K.set_value(z_optimizer.lr, K.get_value(z_optimizer.lr) * 0.5)
+
+			print('loss: %f' % loss_val[0])
 			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val[0]})
 			# TODO: save model and codes
 
