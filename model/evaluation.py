@@ -10,17 +10,26 @@ from keras.callbacks import TensorBoard
 
 class EvaluationCallback(TensorBoard):
 
-	def __init__(self, tensorboard_dir):
+	def __init__(self, generator, identity_embedding, tensorboard_dir):
 		super().__init__(log_dir=tensorboard_dir)
+		super().set_model(generator)
 
-	def call(self, epoch, logs, pose_codes, identity_codes):
+		self.__generator = generator
+		self.__identity_embedding = identity_embedding
+
+	def call(self, epoch, logs, pose_codes):
 		super().on_epoch_end(epoch, logs)
 
-		object_id_a = random.choice(list(identity_codes.keys()))
-		identity_code_a = identity_codes[object_id_a][np.newaxis, ...]
+		identities = list(pose_codes.keys())
 
-		object_id_b = random.choice(list(identity_codes.keys()))
-		identity_code_b = identity_codes[object_id_b][np.newaxis, ...]
+		object_id_a = random.choice(list(identities))
+		object_id_b = random.choice(list(identities))
+
+		identity_a = np.array([identities.index(object_id_a)])[np.newaxis, ...]
+		identity_b = np.array([identities.index(object_id_b)])[np.newaxis, ...]
+
+		identity_code_a = self.__identity_embedding.predict(identity_a)
+		identity_code_b = self.__identity_embedding.predict(identity_b)
 
 		idx_a = np.random.choice(pose_codes[object_id_a].shape[0], size=1)
 		pose_code_a = pose_codes[object_id_a][idx_a]

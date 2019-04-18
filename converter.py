@@ -7,7 +7,7 @@ import numpy as np
 
 import dataset
 from assets import AssetManager
-from model.network import FaceConverter
+from model.network import Converter
 from config import default_config
 
 
@@ -33,11 +33,10 @@ def train(args):
 	with open(assets.get_preprocess_file_path(args.data_name), 'rb') as fd:
 		imgs = pickle.load(fd)
 
-	face_converter = FaceConverter.build(
+	face_converter = Converter.build(
 		img_shape=default_config['img_shape'],
-
-		content_dim=args.content_dim,
-
+		n_identities=len(imgs.keys()),
+		pose_dim=args.pose_dim,
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim']
 	)
@@ -62,7 +61,7 @@ def convert(args):
 	model_dir = assets.get_model_dir(args.model_name)
 	prediction_dir = assets.create_prediction_dir(args.model_name)
 
-	face_converter = FaceConverter.load(model_dir)
+	face_converter = Converter.load(model_dir)
 
 	target_img = imageio.imread(args.target_img_path)
 	target_img = target_img.astype(np.float64) / 255
@@ -95,7 +94,7 @@ def main():
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
+	train_parser.add_argument('-pd', '--pose-dim', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 

@@ -8,29 +8,32 @@ import tensorflow as tf
 from keras import backend as K
 from keras import optimizers
 from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation
-from keras.layers import Layer, Input, Reshape, Flatten, Concatenate
+from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding
 from keras.models import Model, load_model
 from keras.applications import vgg16
 
 from model.evaluation import EvaluationCallback
 
 
-class FaceConverter:
+class Converter:
 
 	class Config:
 
-		def __init__(self, img_shape, content_dim, n_adain_layers, adain_dim):
+		def __init__(self, img_shape, n_identities, pose_dim, n_adain_layers, adain_dim):
 			self.img_shape = img_shape
-			self.content_dim = content_dim
+			self.n_identities = n_identities
+			self.pose_dim = pose_dim
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
 
 	@classmethod
-	def build(cls, img_shape, content_dim, n_adain_layers, adain_dim):
-		config = FaceConverter.Config(img_shape, content_dim, n_adain_layers, adain_dim)
-		generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim)
+	def build(cls, img_shape, n_identities, pose_dim, n_adain_layers, adain_dim):
+		config = Converter.Config(img_shape, n_identities, pose_dim, n_adain_layers, adain_dim)
 
-		return FaceConverter(config, generator)
+		identity_embedding = cls.__build_identity_embedding(n_identities, n_adain_layers, adain_dim)
+		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim)
+
+		return Converter(config, identity_embedding, generator)
 
 	@classmethod
 	def load(cls, model_dir):
@@ -39,11 +42,12 @@ class FaceConverter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
 			config = pickle.load(config_fd)
 
+		identity_embedding = load_model(os.path.join(model_dir, 'identity_embedding.h5py'))
 		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
 
-		return FaceConverter(config, generator)
+		return Converter(config, identity_embedding, generator)
 
 	def save(self, model_dir):
 		print('saving models...')
@@ -51,10 +55,12 @@ class FaceConverter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'wb') as config_fd:
 			pickle.dump(self.config, config_fd)
 
+		self.identity_embedding.save(os.path.join(model_dir, 'identity_embedding.h5py'))
 		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
 
-	def __init__(self, config, generator):
+	def __init__(self, config, identity_embedding, generator):
 		self.config = config
+		self.identity_embedding = identity_embedding
 		self.generator = generator
 
 		# self.vgg = self.__build_vgg()
@@ -63,17 +69,12 @@ class FaceConverter:
 			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
-		pose_code = K.variable(
-			value=np.zeros(shape=(batch_size, self.config.content_dim)),
-			dtype=np.float32
-		)
+		pose_code = K.variable(value=np.zeros(shape=(batch_size, self.config.pose_dim)), dtype=np.float32)
 
-		identity_code = K.variable(
-			value=np.zeros(shape=(batch_size, self.config.n_adain_layers, self.config.adain_dim, 2)),
-			dtype=np.float32
-		)
-
+		identity = K.placeholder(shape=(batch_size, 1))
 		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
+
+		identity_code = self.identity_embedding(identity)
 		generated_img = self.generator([pose_code, identity_code])
 
 		# target_perceptual_codes = self.vgg(target_img)
@@ -84,54 +85,51 @@ class FaceConverter:
 		# TODO: regularize pose code
 
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
-		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
+		z_optimizer = optimizers.Adam(lr=5e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
 
 		train_function = K.function(
-			inputs=[target_img], outputs=[loss],
+			inputs=[identity, target_img], outputs=[loss],
 			updates=(
 				generator_optimizer.get_updates(loss, self.generator.trainable_weights)
-				+ z_optimizer.get_updates(loss, [pose_code, identity_code])
+				+ z_optimizer.get_updates(loss, [pose_code] + self.identity_embedding.trainable_weights)
 			)
 		)
 
-		evaluation_callback = EvaluationCallback(tensorboard_dir)
-		evaluation_callback.set_model(self.generator)
+		evaluation_callback = EvaluationCallback(self.generator, self.identity_embedding, tensorboard_dir)
 
-		pose_codes_batch = np.empty(shape=(batch_size, self.config.content_dim), dtype=np.float32)
-		identity_codes_batch = np.empty(shape=(batch_size, self.config.n_adain_layers, self.config.adain_dim, 2), dtype=np.float32)
+		pose_codes_batch = np.empty(shape=(batch_size, self.config.pose_dim), dtype=np.float32)
+		identities_batch = np.empty(shape=(batch_size, ), dtype=np.uint32)
 		imgs_batch = np.empty(shape=(batch_size, *self.config.img_shape), dtype=np.float32)
 		img_ids = np.empty(shape=(batch_size, ), dtype=np.uint32)
 
-		pose_codes, identity_codes = self.__init_codes(imgs)
+		identities = list(imgs.keys())
+		pose_codes = self.__init_codes(imgs)
+		# TODO: use embeddings for pose as well
 
 		for e in range(n_epochs):
 			for i in range(n_iterations_per_epoch):
-				object_ids = random.sample(imgs.keys(), k=batch_size)
+				object_ids = random.choices(identities, k=batch_size)
 
 				for b in range(batch_size):
 					img_ids[b] = np.random.choice(imgs[object_ids[b]].shape[0], size=1)
 
 					pose_codes_batch[b] = pose_codes[object_ids[b]][img_ids[b]]
-					identity_codes_batch[b] = identity_codes[object_ids[b]]
+					identities_batch[b] = identities.index(object_ids[b])
 					imgs_batch[b] = imgs[object_ids[b]][img_ids[b]][..., np.newaxis] / 255.0
 
 				K.set_value(pose_code, pose_codes_batch)
-				K.set_value(identity_code, identity_codes_batch)
 
-				loss_val = train_function([imgs_batch])
+				loss_val = train_function([identities_batch, imgs_batch])
 				print('loss: %f' % loss_val[0])
 
-				# TODO: gradient clipping?
-				# TODO: code normalization?
-
 				pose_codes_batch = K.get_value(pose_code)
-				identity_codes_batch = K.get_value(identity_code)
+				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1, keepdims=True))
+				# pose_codes_batch = pose_codes_batch / norm
 
 				for b in range(batch_size):
 					pose_codes[object_ids[b]][img_ids[b]] = pose_codes_batch[b]
-					identity_codes[object_ids[b]] = identity_codes_batch[b]
 
-			evaluation_callback.call(epoch=e, logs={'loss': loss_val[0]}, pose_codes=pose_codes, identity_codes=identity_codes)
+			evaluation_callback.call(epoch=e, logs={'loss': loss_val[0]}, pose_codes=pose_codes)
 			# TODO: save model and codes
 
 		evaluation_callback.on_train_end(None)
@@ -139,17 +137,13 @@ class FaceConverter:
 	def __init_codes(self, imgs):
 		pose_codes = dict()
 		for object_id, object_imgs in imgs.items():
-			pose_codes[object_id] = np.random.random(size=(object_imgs.shape[0], self.config.content_dim)).astype(np.float32)
+			pose_codes[object_id] = np.random.random(size=(object_imgs.shape[0], self.config.pose_dim)).astype(np.float32)
 
-		identity_codes = dict()
-		for object_id in imgs.keys():
-			identity_codes[object_id] = np.random.random(size=(self.config.n_adain_layers, self.config.adain_dim, 2)).astype(np.float32)
-
-		return pose_codes, identity_codes
+		return pose_codes
 
 	@classmethod
-	def __build_generator(cls, content_dim, n_adain_layers, adain_dim):
-		content_code = Input(shape=(content_dim,))
+	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):
+		content_code = Input(shape=(pose_dim,))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
 		x = Dense(units=6*6*256)(content_code)
@@ -173,6 +167,19 @@ class FaceConverter:
 		model = Model(inputs=[content_code, identity_adain_params], outputs=target_img, name='generator')
 
 		print('decoder arch:')
+		model.summary()
+
+		return model
+
+	@classmethod
+	def __build_identity_embedding(cls, n_identities, n_adain_layers, adain_dim):
+		identity = Input(shape=(1, ))
+		identity_embedding = Embedding(input_dim=n_identities, output_dim=(n_adain_layers * adain_dim * 2))(identity)
+		identity_embedding = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(identity_embedding)
+
+		model = Model(inputs=identity, outputs=identity_embedding, name='identity-embedding')
+
+		print('identity embedding:')
 		model.summary()
 
 		return model
