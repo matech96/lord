@@ -31,11 +31,25 @@ def train(args):
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
 	with open(assets.get_preprocess_file_path(args.data_name), 'rb') as fd:
-		imgs = pickle.load(fd)
+		data = pickle.load(fd)
+
+		imgs = []
+		img_identities = []
+
+		identities = list(data.keys())[:args.max_identities]
+		for i, identity in enumerate(identities):
+			identity_imgs = data[identity][:args.max_images_per_identity]
+
+			imgs.append(identity_imgs)
+			img_identities.append(np.full(shape=(identity_imgs.shape[0], ), fill_value=i))
+
+		imgs = np.concatenate(imgs, axis=0)[..., np.newaxis] / 255.0
+		img_identities = np.concatenate(img_identities, axis=0)
 
 	face_converter = Converter.build(
 		img_shape=default_config['img_shape'],
-		n_identities=len(imgs.keys()),
+		n_imgs=imgs.shape[0],
+		n_identities=len(identities),
 		pose_dim=args.pose_dim,
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim']
@@ -43,8 +57,9 @@ def train(args):
 
 	face_converter.train(
 		imgs=imgs,
-		batch_size=default_config['batch_size'] * args.gpus,
+		identities=img_identities,
 
+		batch_size=default_config['batch_size'] * args.gpus,
 		n_epochs=default_config['n_epochs'],
 		n_iterations_per_epoch=default_config['n_iterations_per_epoch'],
 		n_epochs_per_checkpoint=default_config['n_epochs_per_checkpoint'],
@@ -95,6 +110,8 @@ def main():
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-pd', '--pose-dim', type=int, required=True)
+	train_parser.add_argument('-mi', '--max-identities', type=int, required=True)
+	train_parser.add_argument('-mipi', '--max-images-per-identity', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 

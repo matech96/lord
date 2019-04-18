@@ -19,21 +19,23 @@ class Converter:
 
 	class Config:
 
-		def __init__(self, img_shape, n_identities, pose_dim, n_adain_layers, adain_dim):
+		def __init__(self, img_shape, n_imgs, n_identities, pose_dim, n_adain_layers, adain_dim):
 			self.img_shape = img_shape
+			self.n_imgs = n_imgs
 			self.n_identities = n_identities
 			self.pose_dim = pose_dim
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
 
 	@classmethod
-	def build(cls, img_shape, n_identities, pose_dim, n_adain_layers, adain_dim):
-		config = Converter.Config(img_shape, n_identities, pose_dim, n_adain_layers, adain_dim)
+	def build(cls, img_shape, n_imgs, n_identities, pose_dim, n_adain_layers, adain_dim):
+		config = Converter.Config(img_shape, n_imgs, n_identities, pose_dim, n_adain_layers, adain_dim)
 
+		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim)
 		identity_embedding = cls.__build_identity_embedding(n_identities, n_adain_layers, adain_dim)
 		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim)
 
-		return Converter(config, identity_embedding, generator)
+		return Converter(config, pose_embedding, identity_embedding, generator)
 
 	@classmethod
 	def load(cls, model_dir):
@@ -42,12 +44,13 @@ class Converter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
 			config = pickle.load(config_fd)
 
+		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'))
 		identity_embedding = load_model(os.path.join(model_dir, 'identity_embedding.h5py'))
 		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
 
-		return Converter(config, identity_embedding, generator)
+		return Converter(config, pose_embedding, identity_embedding, generator)
 
 	def save(self, model_dir):
 		print('saving models...')
@@ -55,25 +58,27 @@ class Converter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'wb') as config_fd:
 			pickle.dump(self.config, config_fd)
 
+		self.pose_embedding.save(os.path.join(model_dir, 'pose_embedding.h5py'))
 		self.identity_embedding.save(os.path.join(model_dir, 'identity_embedding.h5py'))
 		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
 
-	def __init__(self, config, identity_embedding, generator):
+	def __init__(self, config, pose_embedding, identity_embedding, generator):
 		self.config = config
+		self.pose_embedding = pose_embedding
 		self.identity_embedding = identity_embedding
 		self.generator = generator
 
 		# self.vgg = self.__build_vgg()
 
-	def train(self, imgs, batch_size,
-			  n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
+	def train(self, imgs, identities,
+			  batch_size, n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
-		pose_code = K.variable(value=np.zeros(shape=(batch_size, self.config.pose_dim)), dtype=np.float32)
-
+		img_id = K.placeholder(shape=(batch_size, 1))
 		identity = K.placeholder(shape=(batch_size, 1))
 		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
 
+		pose_code = self.pose_embedding(img_id)
 		identity_code = self.identity_embedding(identity)
 		generated_img = self.generator([pose_code, identity_code])
 
@@ -85,61 +90,34 @@ class Converter:
 		# TODO: regularize pose code
 
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
-		z_optimizer = optimizers.Adam(lr=5e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
+		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
 
 		train_function = K.function(
-			inputs=[identity, target_img], outputs=[loss],
+			inputs=[img_id, identity, target_img], outputs=[loss],
 			updates=(
 				generator_optimizer.get_updates(loss, self.generator.trainable_weights)
-				+ z_optimizer.get_updates(loss, [pose_code] + self.identity_embedding.trainable_weights)
+				+ z_optimizer.get_updates(loss, self.pose_embedding.trainable_weights + self.identity_embedding.trainable_weights)
 			)
 		)
 
-		evaluation_callback = EvaluationCallback(self.generator, self.identity_embedding, tensorboard_dir)
-
-		pose_codes_batch = np.empty(shape=(batch_size, self.config.pose_dim), dtype=np.float32)
-		identities_batch = np.empty(shape=(batch_size, ), dtype=np.uint32)
-		imgs_batch = np.empty(shape=(batch_size, *self.config.img_shape), dtype=np.float32)
-		img_ids = np.empty(shape=(batch_size, ), dtype=np.uint32)
-
-		identities = list(imgs.keys())
-		pose_codes = self.__init_codes(imgs)
-		# TODO: use embeddings for pose as well
+		evaluation_callback = EvaluationCallback(
+			imgs, identities, self.pose_embedding, self.identity_embedding, self.generator, tensorboard_dir
+		)
 
 		for e in range(n_epochs):
 			for i in range(n_iterations_per_epoch):
-				object_ids = random.choices(identities, k=batch_size)
+				idx = np.random.choice(imgs.shape[0], size=batch_size)
 
-				for b in range(batch_size):
-					img_ids[b] = np.random.choice(imgs[object_ids[b]].shape[0], size=1)
-
-					pose_codes_batch[b] = pose_codes[object_ids[b]][img_ids[b]]
-					identities_batch[b] = identities.index(object_ids[b])
-					imgs_batch[b] = imgs[object_ids[b]][img_ids[b]][..., np.newaxis] / 255.0
-
-				K.set_value(pose_code, pose_codes_batch)
-
-				loss_val = train_function([identities_batch, imgs_batch])
+				loss_val = train_function([idx, identities[idx], imgs[idx]])
 				print('loss: %f' % loss_val[0])
 
-				pose_codes_batch = K.get_value(pose_code)
 				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1, keepdims=True))
 				# pose_codes_batch = pose_codes_batch / norm
 
-				for b in range(batch_size):
-					pose_codes[object_ids[b]][img_ids[b]] = pose_codes_batch[b]
-
-			evaluation_callback.call(epoch=e, logs={'loss': loss_val[0]}, pose_codes=pose_codes)
+			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val[0]})
 			# TODO: save model and codes
 
 		evaluation_callback.on_train_end(None)
-
-	def __init_codes(self, imgs):
-		pose_codes = dict()
-		for object_id, object_imgs in imgs.items():
-			pose_codes[object_id] = np.random.random(size=(object_imgs.shape[0], self.config.pose_dim)).astype(np.float32)
-
-		return pose_codes
 
 	@classmethod
 	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):
@@ -167,6 +145,19 @@ class Converter:
 		model = Model(inputs=[content_code, identity_adain_params], outputs=target_img, name='generator')
 
 		print('decoder arch:')
+		model.summary()
+
+		return model
+
+	@classmethod
+	def __build_pose_embedding(cls, n_imgs, pose_dim):
+		img_id = Input(shape=(1, ))
+		pose_embedding = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
+		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
+
+		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
+
+		print('pose embedding:')
 		model.summary()
 
 		return model

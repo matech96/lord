@@ -1,4 +1,3 @@
-import random
 import io
 
 import numpy as np
@@ -10,32 +9,31 @@ from keras.callbacks import TensorBoard
 
 class EvaluationCallback(TensorBoard):
 
-	def __init__(self, generator, identity_embedding, tensorboard_dir):
+	def __init__(self, imgs, identities, pose_embedding, identity_embedding, generator, tensorboard_dir):
 		super().__init__(log_dir=tensorboard_dir)
 		super().set_model(generator)
 
-		self.__generator = generator
-		self.__identity_embedding = identity_embedding
+		self.__imgs = imgs
+		self.__identities = identities
 
-	def call(self, epoch, logs, pose_codes):
+		self.__pose_embedding = pose_embedding
+		self.__identity_embedding = identity_embedding
+		self.__generator = generator
+
+	def on_epoch_end(self, epoch, logs={}):
 		super().on_epoch_end(epoch, logs)
 
-		identities = list(pose_codes.keys())
+		imgs_id_a = np.random.choice(self.__imgs.shape[0], size=1)
+		imgs_id_b = np.random.choice(self.__imgs.shape[0], size=1)
 
-		object_id_a = random.choice(list(identities))
-		object_id_b = random.choice(list(identities))
+		pose_code_a = self.__pose_embedding.predict(imgs_id_a)
+		pose_code_b = self.__pose_embedding.predict(imgs_id_b)
 
-		identity_a = np.array([identities.index(object_id_a)])[np.newaxis, ...]
-		identity_b = np.array([identities.index(object_id_b)])[np.newaxis, ...]
+		identity_a = self.__identities[imgs_id_a]
+		identity_b = self.__identities[imgs_id_b]
 
 		identity_code_a = self.__identity_embedding.predict(identity_a)
 		identity_code_b = self.__identity_embedding.predict(identity_b)
-
-		idx_a = np.random.choice(pose_codes[object_id_a].shape[0], size=1)
-		pose_code_a = pose_codes[object_id_a][idx_a]
-
-		idx_b = np.random.choice(pose_codes[object_id_b].shape[0], size=1)
-		pose_code_b = pose_codes[object_id_b][idx_b]
 
 		img_a_a = self.model.predict([pose_code_a, identity_code_a])[0]
 		img_b_a = self.model.predict([pose_code_b, identity_code_a])[0]
