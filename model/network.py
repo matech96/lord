@@ -71,7 +71,7 @@ class Converter:
 		self.vgg = self.__build_vgg()
 
 	def train(self, imgs, identities,
-			  batch_size, n_epochs, n_iterations_per_epoch, n_epochs_per_checkpoint,
+			  batch_size, n_epochs, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
 		img_id = K.placeholder(shape=(batch_size, 1))
@@ -85,8 +85,8 @@ class Converter:
 		target_perceptual_codes = self.vgg(target_img)
 		generated_perceptual_codes = self.vgg(generated_img)
 
-		loss = K.mean(K.abs(generated_img - target_img)) + K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
-		# TODO: regularize pose code
+		gamma = 1e3
+		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes)) + gamma * K.mean(K.abs(pose_code))
 
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
 		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
@@ -103,29 +103,45 @@ class Converter:
 			imgs, identities, self.pose_embedding, self.identity_embedding, self.generator, tensorboard_dir
 		)
 
+		n_samples = imgs.shape[0]
 		for e in range(n_epochs):
-			for i in range(n_iterations_per_epoch):
-				idx = np.random.choice(imgs.shape[0], size=batch_size)
+			epoch_idx = np.random.permutation(n_samples)
+			for i in np.arange(start=0, stop=(n_samples - batch_size + 1), step=batch_size):
+				idx = epoch_idx[i:(i + batch_size)]
 				loss_val = train_function([idx, identities[idx], imgs[idx]])
 
-				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1, keepdims=True))
-				# pose_codes_batch = pose_codes_batch / norm
+			self.normalize_pose_embeddings()
 
-			# K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
-			# K.set_value(z_optimizer.lr, K.get_value(z_optimizer.lr) * 0.5)
-
-			print('loss: %f' % loss_val[0])
+			print('epoch: %d | loss = %f' % (e, loss_val[0]))
 			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val[0]})
-			# TODO: save model and codes
+
+			if e % n_epochs_per_checkpoint == 0:
+				self.save(model_dir)
 
 		evaluation_callback.on_train_end(None)
 
+	def normalize_pose_embeddings(self):
+		pose_embeddings = self.pose_embedding.get_weights()[0]
+
+		norm = np.sqrt(np.sum(pose_embeddings ** 2, axis=1, keepdims=True))
+		pose_embeddings = pose_embeddings / norm
+
+		self.pose_embedding.set_weights([pose_embeddings])
+
 	@classmethod
 	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):
-		content_code = Input(shape=(pose_dim,))
+		pose_code = Input(shape=(pose_dim,))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
-		x = Dense(units=6*6*256)(content_code)
+		x = Dense(units=128)(pose_code)
+		x = BatchNormalization()(x)
+		x = LeakyReLU()(x)
+
+		x = Dense(units=256)(x)
+		x = BatchNormalization()(x)
+		x = LeakyReLU()(x)
+
+		x = Dense(units=6*6*256)(x)
 		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
@@ -144,7 +160,7 @@ class Converter:
 		x = Conv2D(filters=1, kernel_size=(7, 7), padding='same')(x)
 		target_img = Activation('sigmoid')(x)
 
-		model = Model(inputs=[content_code, identity_adain_params], outputs=target_img, name='generator')
+		model = Model(inputs=[pose_code, identity_adain_params], outputs=target_img, name='generator')
 
 		print('decoder arch:')
 		model.summary()

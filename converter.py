@@ -59,9 +59,8 @@ def train(args):
 		imgs=imgs,
 		identities=img_identities,
 
-		batch_size=default_config['batch_size'] * args.gpus,
+		batch_size=default_config['batch_size'],
 		n_epochs=default_config['n_epochs'],
-		n_iterations_per_epoch=default_config['n_iterations_per_epoch'],
 		n_epochs_per_checkpoint=default_config['n_epochs_per_checkpoint'],
 
 		model_dir=model_dir,
