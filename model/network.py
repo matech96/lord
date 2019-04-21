@@ -1,13 +1,12 @@
 import os
 import pickle
-import random
 
 import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
 from keras import optimizers
-from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation
+from keras.layers import Conv2D, Dense, UpSampling2D, BatchNormalization, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding
 from keras.models import Model, load_model
 from keras.applications import vgg16
@@ -89,8 +88,8 @@ class Converter:
 		loss = K.mean(K.abs(generated_img - target_img)) + K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
 		# TODO: regularize pose code
 
-		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
-		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
+		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
+		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
 
 		train_function = K.function(
 			inputs=[img_id, identity, target_img], outputs=[loss],
@@ -112,8 +111,8 @@ class Converter:
 				# norm = np.sqrt(np.sum(pose_codes_batch ** 2, axis=1, keepdims=True))
 				# pose_codes_batch = pose_codes_batch / norm
 
-			K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
-			K.set_value(z_optimizer.lr, K.get_value(z_optimizer.lr) * 0.5)
+			# K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
+			# K.set_value(z_optimizer.lr, K.get_value(z_optimizer.lr) * 0.5)
 
 			print('loss: %f' % loss_val[0])
 			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val[0]})
@@ -127,6 +126,7 @@ class Converter:
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
 		x = Dense(units=6*6*256)(content_code)
+		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Reshape(target_shape=(6, 6, 256))(x)
