@@ -85,8 +85,7 @@ class Converter:
 		target_perceptual_codes = self.vgg(target_img)
 		generated_perceptual_codes = self.vgg(generated_img)
 
-		gamma = 1e3
-		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes)) + gamma * K.mean(K.abs(pose_code))
+		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))  # + gamma * K.mean(K.abs(pose_code))
 
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
 		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
@@ -110,7 +109,7 @@ class Converter:
 				batch_idx = epoch_idx[i:(i + batch_size)]
 				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
 
-			self.normalize_pose_embeddings()
+			# self.normalize_pose_embeddings()
 
 			evaluation_callback.on_epoch_end(epoch=e, logs={
 				'loss': loss_val[0],
@@ -175,6 +174,7 @@ class Converter:
 		img_id = Input(shape=(1, ))
 		pose_embedding = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
 		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
+		pose_embedding = Activation('sigmoid')(pose_embedding)
 
 		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
 
