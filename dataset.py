@@ -35,15 +35,13 @@ class SmallNorb(DataSet):
 	def __init__(self, base_dir):
 		super().__init__(base_dir)
 
-		self.__imgs_dir = os.path.join(self._base_dir, 'train')
-
 	def get_identity_map(self):
 		identity_map = dict()
 
-		regex = re.compile('(\d+)_(\w+)_(\d+)_(\w+).jpg')
-		for file_name in os.listdir(self.__imgs_dir):
-			img_path = os.path.join(self.__imgs_dir, file_name)
-			img_id, category, instance, lt_rt = regex.match(file_name).groups()
+		regex = re.compile('(\d+)_(\w+)_(\d+)_azimuth(\d+)_elevation(\d+)_lighting(\d+)_(\w+).jpg')
+		for file_name in os.listdir(self._base_dir):
+			img_path = os.path.join(self._base_dir, file_name)
+			img_id, category, instance, azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
 			object_id = '%s_%s' % (category, instance)
 			if object_id not in identity_map:
