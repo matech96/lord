@@ -107,13 +107,16 @@ class Converter:
 		for e in range(n_epochs):
 			epoch_idx = np.random.permutation(n_samples)
 			for i in np.arange(start=0, stop=(n_samples - batch_size + 1), step=batch_size):
-				idx = epoch_idx[i:(i + batch_size)]
-				loss_val = train_function([idx, identities[idx], imgs[idx]])
+				batch_idx = epoch_idx[i:(i + batch_size)]
+				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
 
 			self.normalize_pose_embeddings()
 
-			print('epoch: %d | loss = %f' % (e, loss_val[0]))
-			evaluation_callback.on_epoch_end(epoch=e, logs={'loss': loss_val[0]})
+			evaluation_callback.on_epoch_end(epoch=e, logs={
+				'loss': loss_val[0],
+				'generator_lr': K.get_value(generator_optimizer.lr),
+				'z_lr': K.get_value(z_optimizer.lr)
+			})
 
 			if e % n_epochs_per_checkpoint == 0:
 				self.save(model_dir)
