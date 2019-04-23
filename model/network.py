@@ -174,7 +174,7 @@ class Converter:
 		img_id = Input(shape=(1, ))
 		pose_embedding = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
 		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
-		pose_embedding = Activation('sigmoid')(pose_embedding)
+		pose_embedding = Activation('softmax')(pose_embedding)
 
 		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
 
