@@ -87,14 +87,16 @@ class Converter:
 
 		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))  # + gamma * K.mean(K.abs(pose_code))
 
-		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999, decay=1e-4)
-		z_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999, decay=1e-4)
+		pose_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
+		identity_optimizer = optimizers.Adam(lr=5e-4, beta_1=0.5, beta_2=0.999)
+		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
 
 		train_function = K.function(
 			inputs=[img_id, identity, target_img], outputs=[loss],
 			updates=(
-				generator_optimizer.get_updates(loss, self.generator.trainable_weights)
-				+ z_optimizer.get_updates(loss, self.pose_embedding.trainable_weights + self.identity_embedding.trainable_weights)
+				pose_optimizer.get_updates(loss, self.pose_embedding.trainable_weights)
+				+ identity_optimizer.get_updates(loss, self.identity_embedding.trainable_weights)
+				+ generator_optimizer.get_updates(loss, self.generator.trainable_weights)
 			)
 		)
 
@@ -103,18 +105,22 @@ class Converter:
 		)
 
 		n_samples = imgs.shape[0]
-		for e in range(n_epochs):
+		for e in range(1, n_epochs + 1):
 			epoch_idx = np.random.permutation(n_samples)
 			for i in np.arange(start=0, stop=(n_samples - batch_size + 1), step=batch_size):
 				batch_idx = epoch_idx[i:(i + batch_size)]
 				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
 
-			# self.normalize_pose_embeddings()
+			if e % 100 == 0:
+				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
+				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
+				K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
 
 			evaluation_callback.on_epoch_end(epoch=e, logs={
 				'loss': loss_val[0],
-				'generator_lr': K.get_value(generator_optimizer.lr),
-				'z_lr': K.get_value(z_optimizer.lr)
+				'pose_lr': K.get_value(pose_optimizer.lr),
+				'identity_lr': K.get_value(identity_optimizer.lr),
+				'generator_lr': K.get_value(generator_optimizer.lr)
 			})
 
 			if e % n_epochs_per_checkpoint == 0:
@@ -122,13 +128,13 @@ class Converter:
 
 		evaluation_callback.on_train_end(None)
 
-	def normalize_pose_embeddings(self):
-		pose_embeddings = self.pose_embedding.get_weights()[0]
-
-		norm = np.sqrt(np.sum(pose_embeddings ** 2, axis=1, keepdims=True))
-		pose_embeddings = pose_embeddings / norm
-
-		self.pose_embedding.set_weights([pose_embeddings])
+	# def normalize_pose_embeddings(self):
+	# 	pose_embeddings = self.pose_embedding.get_weights()[0]
+	#
+	# 	norm = np.sqrt(np.sum(pose_embeddings ** 2, axis=1, keepdims=True))
+	# 	pose_embeddings = pose_embeddings / norm
+	#
+	# 	self.pose_embedding.set_weights([pose_embeddings])
 
 	@classmethod
 	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):
