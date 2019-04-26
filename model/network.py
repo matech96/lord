@@ -6,7 +6,7 @@ import tensorflow as tf
 
 from keras import backend as K
 from keras import optimizers
-from keras.layers import Conv2D, Dense, UpSampling2D, BatchNormalization, LeakyReLU, Activation
+from keras.layers import Conv2D, Dense, UpSampling2D, BatchNormalization, LeakyReLU, Activation, Lambda
 from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding
 from keras.models import Model, load_model
 from keras.applications import vgg16
@@ -88,7 +88,7 @@ class Converter:
 		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))  # + gamma * K.mean(K.abs(pose_code))
 
 		pose_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
-		identity_optimizer = optimizers.Adam(lr=5e-4, beta_1=0.5, beta_2=0.999)
+		identity_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
 
 		train_function = K.function(
@@ -111,7 +111,7 @@ class Converter:
 				batch_idx = epoch_idx[i:(i + batch_size)]
 				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
 
-			if e % 100 == 0:
+			if e % 500 == 0:
 				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
 				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
 				K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
@@ -178,9 +178,14 @@ class Converter:
 	@classmethod
 	def __build_pose_embedding(cls, n_imgs, pose_dim):
 		img_id = Input(shape=(1, ))
-		pose_embedding = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
-		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
-		pose_embedding = Activation('softmax')(pose_embedding)
+
+		pose_embedding_mean = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
+		pose_embedding_mean = Reshape(target_shape=(pose_dim, ))(pose_embedding_mean)
+
+		pose_embedding_log_var = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
+		pose_embedding_log_var = Reshape(target_shape=(pose_dim, ))(pose_embedding_log_var)
+
+		pose_embedding = Lambda(sampling, output_shape=(pose_dim, ))([pose_embedding_mean, pose_embedding_log_var])
 
 		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
 
@@ -261,3 +266,13 @@ class NormalizeForVGG(Layer):
 		x = tf.tile(x, (1, 1, 1, 3))
 
 		return vgg16.preprocess_input(x)
+
+
+def sampling(args):
+	z_mean, z_log_var = args
+
+	batch = K.shape(z_mean)[0]
+	dim = K.int_shape(z_mean)[1]
+
+	z_standard = K.random_normal(shape=(batch, dim))
+	return z_mean + K.exp(0.5 * z_log_var) * z_standard
