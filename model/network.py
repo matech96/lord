@@ -71,7 +71,8 @@ class Converter:
 		self.vgg = self.__build_vgg()
 
 	def train(self, imgs, identities,
-			  batch_size, n_epochs, n_epochs_per_checkpoint,
+			  batch_size, n_epochs,
+			  n_epochs_per_decay, n_epochs_per_checkpoint,
 			  model_dir, tensorboard_dir):
 
 		img_id = K.placeholder(shape=(batch_size, 1))
@@ -111,11 +112,6 @@ class Converter:
 				batch_idx = epoch_idx[i:(i + batch_size)]
 				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
 
-			if e % 500 == 0:
-				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
-				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
-				K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
-
 			evaluation_callback.on_epoch_end(epoch=e, logs={
 				'loss': loss_val[0],
 				'pose_lr': K.get_value(pose_optimizer.lr),
@@ -123,18 +119,15 @@ class Converter:
 				'generator_lr': K.get_value(generator_optimizer.lr)
 			})
 
+			if e % n_epochs_per_decay == 0:
+				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
+				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
+				K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
+
 			if e % n_epochs_per_checkpoint == 0:
 				self.save(model_dir)
 
 		evaluation_callback.on_train_end(None)
-
-	# def normalize_pose_embeddings(self):
-	# 	pose_embeddings = self.pose_embedding.get_weights()[0]
-	#
-	# 	norm = np.sqrt(np.sum(pose_embeddings ** 2, axis=1, keepdims=True))
-	# 	pose_embeddings = pose_embeddings / norm
-	#
-	# 	self.pose_embedding.set_weights([pose_embeddings])
 
 	@classmethod
 	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):

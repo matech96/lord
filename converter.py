@@ -61,6 +61,8 @@ def train(args):
 
 		batch_size=default_config['batch_size'],
 		n_epochs=default_config['n_epochs'],
+
+		n_epochs_per_decay=default_config['n_epochs_per_decay'],
 		n_epochs_per_checkpoint=default_config['n_epochs_per_checkpoint'],
 
 		model_dir=model_dir,

@@ -6,5 +6,6 @@ default_config = dict(
 
 	batch_size=8,
 	n_epochs=100000,
+	n_epochs_per_decay=500,
 	n_epochs_per_checkpoint=50
 )
