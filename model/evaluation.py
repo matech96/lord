@@ -20,33 +20,33 @@ class EvaluationCallback(TensorBoard):
 		self.__identity_embedding = identity_embedding
 		self.__generator = generator
 
+		self.__n_identities = 5
+		self.__n_poses = 5
+
 	def on_epoch_end(self, epoch, logs={}):
 		super().on_epoch_end(epoch, logs)
 
-		imgs_id_a = np.random.choice(self.__imgs.shape[0], size=1)
-		imgs_id_b = np.random.choice(self.__imgs.shape[0], size=1)
+		identities = np.random.choice(self.__identities.max() + 1, size=self.__n_identities, replace=False)
+		reference_identity = identities[0]
 
-		pose_code_a = self.__pose_embedding.predict(imgs_id_a)
-		pose_code_b = self.__pose_embedding.predict(imgs_id_b)
+		reference_identity_img_ids = np.where(self.__identities == reference_identity)[0]
+		img_ids = np.random.choice(reference_identity_img_ids, size=self.__n_poses, replace=False)
 
-		identity_a = self.__identities[imgs_id_a]
-		identity_b = self.__identities[imgs_id_b]
+		pose_codes = self.__pose_embedding.predict(img_ids)
+		identity_codes = self.__identity_embedding.predict(identities)
 
-		identity_code_a = self.__identity_embedding.predict(identity_a)
-		identity_code_b = self.__identity_embedding.predict(identity_b)
+		rows = []
+		for i in range(self.__n_identities):
+			row = []
+			for j in range(self.__n_poses):
+				img = self.model.predict([pose_codes[[j]], identity_codes[[i]]])[0]
+				row.append(img)
 
-		img_a_a = self.model.predict([pose_code_a, identity_code_a])[0]
-		img_b_a = self.model.predict([pose_code_b, identity_code_a])[0]
-		img_a_b = self.model.predict([pose_code_a, identity_code_b])[0]
-		img_b_b = self.model.predict([pose_code_b, identity_code_b])[0]
+			rows.append(np.concatenate(row, axis=1))
 
-		merged_img = np.concatenate((
-			np.concatenate((img_a_a, img_b_a), axis=1),
-			np.concatenate((img_a_b, img_b_b), axis=1)
-		), axis=0)
+		merged_img = np.concatenate(rows, axis=0)
 
 		summary = tf.Summary(value=[tf.Summary.Value(tag='sample', image=self.make_image(merged_img))])
-
 		self.writer.add_summary(summary, global_step=epoch)
 		self.writer.flush()
 
