@@ -43,7 +43,7 @@ class SmallNorb(DataSet):
 			img_path = os.path.join(self._base_dir, file_name)
 			img_id, category, instance, azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
-			object_id = '%s_%s' % (category, instance)
+			object_id = '_'.join((category, instance, elevation, lighting, lt_rt))
 			if object_id not in identity_map:
 				identity_map[object_id] = list()
 
