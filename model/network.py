@@ -18,23 +18,25 @@ class Converter:
 
 	class Config:
 
-		def __init__(self, img_shape, n_imgs, n_identities, pose_dim, n_adain_layers, adain_dim):
+		def __init__(self, img_shape, n_imgs, n_identities, pose_dim, identity_dim, n_adain_layers, adain_dim):
 			self.img_shape = img_shape
 			self.n_imgs = n_imgs
 			self.n_identities = n_identities
 			self.pose_dim = pose_dim
+			self.identity_dim = identity_dim
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
 
 	@classmethod
-	def build(cls, img_shape, n_imgs, n_identities, pose_dim, n_adain_layers, adain_dim):
-		config = Converter.Config(img_shape, n_imgs, n_identities, pose_dim, n_adain_layers, adain_dim)
+	def build(cls, img_shape, n_imgs, n_identities, pose_dim, identity_dim, n_adain_layers, adain_dim):
+		config = Converter.Config(img_shape, n_imgs, n_identities, pose_dim, identity_dim, n_adain_layers, adain_dim)
 
 		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim)
-		identity_embedding = cls.__build_identity_embedding(n_identities, n_adain_layers, adain_dim)
+		identity_embedding = cls.__build_identity_embedding(n_identities, identity_dim)
+		identity_modulation = cls.__build_identity_modulation(identity_dim, n_adain_layers, adain_dim)
 		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim)
 
-		return Converter(config, pose_embedding, identity_embedding, generator)
+		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
 
 	@classmethod
 	def load(cls, model_dir):
@@ -45,11 +47,12 @@ class Converter:
 
 		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'))
 		identity_embedding = load_model(os.path.join(model_dir, 'identity_embedding.h5py'))
+		identity_modulation = load_model(os.path.join(model_dir, 'identity_modulation.h5py'))
 		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
 
-		return Converter(config, pose_embedding, identity_embedding, generator)
+		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
 
 	def save(self, model_dir):
 		print('saving models...')
@@ -59,13 +62,15 @@ class Converter:
 
 		self.pose_embedding.save(os.path.join(model_dir, 'pose_embedding.h5py'))
 		self.identity_embedding.save(os.path.join(model_dir, 'identity_embedding.h5py'))
+		self.identity_modulation.save(os.path.join(model_dir, 'identity_modulation.h5py'))
 		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
 
-	def __init__(self, config, pose_embedding, identity_embedding, generator):
+	def __init__(self, config, pose_embedding, identity_embedding, identity_modulation, generator):
 		self.config = config
 
 		self.pose_embedding = pose_embedding
 		self.identity_embedding = identity_embedding
+		self.identity_modulation = identity_modulation
 		self.generator = generator
 
 		self.vgg = self.__build_vgg()
@@ -81,7 +86,8 @@ class Converter:
 
 		pose_code = self.pose_embedding(img_id)
 		identity_code = self.identity_embedding(identity)
-		generated_img = self.generator([pose_code, identity_code])
+		identity_adain_params = self.identity_modulation(identity_code)
+		generated_img = self.generator([pose_code, identity_adain_params])
 
 		target_perceptual_codes = self.vgg(target_img)
 		generated_perceptual_codes = self.vgg(generated_img)
@@ -90,6 +96,7 @@ class Converter:
 
 		pose_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
 		identity_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
+		identity_modulation_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
 		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
 
 		train_function = K.function(
@@ -97,12 +104,15 @@ class Converter:
 			updates=(
 				pose_optimizer.get_updates(loss, self.pose_embedding.trainable_weights)
 				+ identity_optimizer.get_updates(loss, self.identity_embedding.trainable_weights)
+				+ identity_modulation_optimizer.get_updates(loss, self.identity_modulation.trainable_weights)
 				+ generator_optimizer.get_updates(loss, self.generator.trainable_weights)
 			)
 		)
 
-		evaluation_callback = EvaluationCallback(
-			imgs, identities, self.pose_embedding, self.identity_embedding, self.generator, tensorboard_dir
+		evaluation_callback = EvaluationCallback(imgs, identities,
+			self.pose_embedding, self.identity_embedding,
+			self.identity_modulation, self.generator,
+			tensorboard_dir
 		)
 
 		n_samples = imgs.shape[0]
@@ -128,6 +138,21 @@ class Converter:
 				self.save(model_dir)
 
 		evaluation_callback.on_train_end(None)
+
+	@classmethod
+	def __build_identity_modulation(cls, identity_dim, n_adain_layers, adain_dim):
+		identity_code = Input(shape=(identity_dim,))
+
+		adain_per_layer = [Dense(units=adain_dim * 2)(identity_code) for _ in range(n_adain_layers)]
+		adain_all = Concatenate(axis=-1)(adain_per_layer)
+		identity_adain_params = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(adain_all)
+
+		model = Model(inputs=[identity_code], outputs=identity_adain_params, name='identity-modulation')
+
+		print('identity-modulation arch:')
+		model.summary()
+
+		return model
 
 	@classmethod
 	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):
@@ -188,10 +213,10 @@ class Converter:
 		return model
 
 	@classmethod
-	def __build_identity_embedding(cls, n_identities, n_adain_layers, adain_dim):
+	def __build_identity_embedding(cls, n_identities, identity_dim):
 		identity = Input(shape=(1, ))
-		identity_embedding = Embedding(input_dim=n_identities, output_dim=(n_adain_layers * adain_dim * 2))(identity)
-		identity_embedding = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(identity_embedding)
+		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim)(identity)
+		identity_embedding = Reshape(target_shape=(identity_dim,))(identity_embedding)
 
 		model = Model(inputs=identity, outputs=identity_embedding, name='identity-embedding')
 

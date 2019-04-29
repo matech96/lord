@@ -9,7 +9,7 @@ from keras.callbacks import TensorBoard
 
 class EvaluationCallback(TensorBoard):
 
-	def __init__(self, imgs, identities, pose_embedding, identity_embedding, generator, tensorboard_dir):
+	def __init__(self, imgs, identities, pose_embedding, identity_embedding, identity_modulation, generator, tensorboard_dir):
 		super().__init__(log_dir=tensorboard_dir)
 		super().set_model(generator)
 
@@ -18,6 +18,7 @@ class EvaluationCallback(TensorBoard):
 
 		self.__pose_embedding = pose_embedding
 		self.__identity_embedding = identity_embedding
+		self.__identity_modulation = identity_modulation
 		self.__generator = generator
 
 		self.__n_identities = 5
@@ -34,12 +35,13 @@ class EvaluationCallback(TensorBoard):
 
 		pose_codes = self.__pose_embedding.predict(img_ids)
 		identity_codes = self.__identity_embedding.predict(identities)
+		identity_adain_params = self.__identity_modulation.predict(identity_codes)
 
 		rows = []
 		for i in range(self.__n_identities):
 			row = []
 			for j in range(self.__n_poses):
-				img = self.model.predict([pose_codes[[j]], identity_codes[[i]]])[0]
+				img = self.model.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
 				row.append(img)
 
 			rows.append(np.concatenate(row, axis=1))

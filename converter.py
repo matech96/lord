@@ -50,7 +50,10 @@ def train(args):
 		img_shape=default_config['img_shape'],
 		n_imgs=imgs.shape[0],
 		n_identities=len(identities),
+
 		pose_dim=args.pose_dim,
+		identity_dim=args.identity_dim,
+
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim']
 	)
@@ -111,6 +114,7 @@ def main():
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-pd', '--pose-dim', type=int, required=True)
+	train_parser.add_argument('-id', '--identity-dim', type=int, default=256)
 	train_parser.add_argument('-mi', '--max-identities', type=int, required=True)
 	train_parser.add_argument('-mipi', '--max-images-per-identity', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
