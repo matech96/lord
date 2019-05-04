@@ -21,17 +21,17 @@ class EvaluationCallback(TensorBoard):
 		self.__identity_modulation = identity_modulation
 		self.__generator = generator
 
-		self.__n_identities = 5
-		self.__n_poses = 5
+		self.__n_identities_per_evaluation = min(self.__identities.max() + 1, 5)
+		self.__n_poses_per_evaluation = 5
 
 	def on_epoch_end(self, epoch, logs={}):
 		super().on_epoch_end(epoch, logs)
 
-		identities = np.random.choice(self.__identities.max() + 1, size=self.__n_identities, replace=False)
+		identities = np.random.choice(self.__identities.max() + 1, size=self.__n_identities_per_evaluation, replace=False)
 		reference_identity = identities[0]
 
 		reference_identity_img_ids = np.where(self.__identities == reference_identity)[0]
-		img_ids = np.random.choice(reference_identity_img_ids, size=self.__n_poses, replace=False)
+		img_ids = np.random.choice(reference_identity_img_ids, size=self.__n_poses_per_evaluation, replace=False)
 
 		imgs = self.__imgs[img_ids]
 		pose_codes = self.__pose_embedding.predict(img_ids)
@@ -39,10 +39,10 @@ class EvaluationCallback(TensorBoard):
 		identity_adain_params = self.__identity_modulation.predict(identity_codes)
 
 		output = [np.concatenate(list(imgs), axis=1)]
-		for i in range(self.__n_identities):
+		for i in range(self.__n_identities_per_evaluation):
 			identity_imgs = [
 				self.model.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
-				for j in range(self.__n_poses)
+				for j in range(self.__n_poses_per_evaluation)
 			]
 
 			output.append(np.concatenate(identity_imgs, axis=1))
