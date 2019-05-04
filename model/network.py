@@ -34,7 +34,7 @@ class Converter:
 		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim)
 		identity_embedding = cls.__build_identity_embedding(n_identities, identity_dim)
 		identity_modulation = cls.__build_identity_modulation(identity_dim, n_adain_layers, adain_dim)
-		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim)
+		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim, img_shape)
 
 		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
 
@@ -155,9 +155,12 @@ class Converter:
 		return model
 
 	@classmethod
-	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim):
+	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim, img_shape):
 		pose_code = Input(shape=(pose_dim,))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
+
+		initial_height = img_shape[0] // (2 ** n_adain_layers)
+		initial_width = img_shape[1] // (2 ** n_adain_layers)
 
 		x = Dense(units=128)(pose_code)
 		x = BatchNormalization()(x)
@@ -167,11 +170,11 @@ class Converter:
 		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
-		x = Dense(units=6*6*256)(x)
+		x = Dense(units=initial_height*initial_width*256)(x)
 		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
-		x = Reshape(target_shape=(6, 6, 256))(x)
+		x = Reshape(target_shape=(initial_height, initial_width, 256))(x)
 
 		for i in range(n_adain_layers):
 			x = UpSampling2D(size=(2, 2))(x)

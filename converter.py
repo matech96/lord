@@ -47,7 +47,7 @@ def train(args):
 		img_identities = np.concatenate(img_identities, axis=0)
 
 	face_converter = Converter.build(
-		img_shape=default_config['img_shape'],
+		img_shape=imgs.shape[1:],
 		n_imgs=imgs.shape[0],
 		n_identities=len(identities),
 
