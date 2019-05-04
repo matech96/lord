@@ -39,7 +39,7 @@ def train(args):
 			imgs.append(identity_imgs)
 			img_identities.append(np.full(shape=(identity_imgs.shape[0], ), fill_value=i))
 
-		imgs = np.concatenate(imgs, axis=0)[..., np.newaxis] / 255.0
+		imgs = np.concatenate(imgs, axis=0) / 255.0
 		img_identities = np.concatenate(img_identities, axis=0)
 
 	face_converter = Converter.build(

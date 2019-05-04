@@ -186,7 +186,7 @@ class Converter:
 		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
 		x = LeakyReLU()(x)
 
-		x = Conv2D(filters=1, kernel_size=(7, 7), padding='same')(x)
+		x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
 		target_img = Activation('sigmoid')(x)
 
 		model = Model(inputs=[pose_code, identity_adain_params], outputs=target_img, name='generator')
@@ -284,7 +284,8 @@ class VggNormalization(Layer):
 	def call(self, inputs, **kwargs):
 		x = inputs * 255
 
-		x = tf.tile(x, (1, 1, 1, 3))
+		if x.shape[-1] == 1:
+			x = tf.tile(x, (1, 1, 1, 3))
 
 		return vgg16.preprocess_input(x)
 
