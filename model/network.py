@@ -162,19 +162,19 @@ class Converter:
 		initial_height = img_shape[0] // (2 ** n_adain_layers)
 		initial_width = img_shape[1] // (2 ** n_adain_layers)
 
-		x = Dense(units=128)(pose_code)
+		x = Dense(units=initial_height * initial_width * (adain_dim // 8))(pose_code)
 		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
-		x = Dense(units=256)(x)
+		x = Dense(units=initial_height * initial_width * (adain_dim // 4))(x)
 		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
-		x = Dense(units=initial_height*initial_width*256)(x)
+		x = Dense(units=initial_height * initial_width * adain_dim)(x)
 		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
-		x = Reshape(target_shape=(initial_height, initial_width, 256))(x)
+		x = Reshape(target_shape=(initial_height, initial_width, adain_dim))(x)
 
 		for i in range(n_adain_layers):
 			x = UpSampling2D(size=(2, 2))(x)
@@ -191,7 +191,7 @@ class Converter:
 
 		model = Model(inputs=[pose_code, identity_adain_params], outputs=target_img, name='generator')
 
-		print('decoder arch:')
+		print('generator arch:')
 		model.summary()
 
 		return model

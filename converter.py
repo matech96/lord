@@ -114,7 +114,7 @@ def main():
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-pd', '--pose-dim', type=int, required=True)
-	train_parser.add_argument('-id', '--identity-dim', type=int, default=256)
+	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
 	train_parser.add_argument('-mi', '--max-identities', type=int, required=True)
 	train_parser.add_argument('-mipi', '--max-images-per-identity', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
