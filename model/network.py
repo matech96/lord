@@ -206,7 +206,7 @@ class Converter:
 		pose_embedding_log_var = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
 		pose_embedding_log_var = Reshape(target_shape=(pose_dim, ))(pose_embedding_log_var)
 
-		pose_embedding = Lambda(sampling, output_shape=(pose_dim, ))([pose_embedding_mean, pose_embedding_log_var])
+		pose_embedding = GaussianSampling()([pose_embedding_mean, pose_embedding_log_var])
 
 		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
 
@@ -237,7 +237,7 @@ class Converter:
 		base_model = Model(inputs=vgg.inputs, outputs=Concatenate(axis=-1)(layer_outputs))
 
 		img = Input(shape=self.config.img_shape)
-		model = Model(inputs=img, outputs=base_model(NormalizeForVGG()(img)), name='vgg')
+		model = Model(inputs=img, outputs=base_model(VggNormalization()(img)), name='vgg')
 
 		print('vgg arch:')
 		model.summary()
@@ -276,7 +276,7 @@ class AdaptiveInstanceNormalization(Layer):
 		return dict(list(base_config.items()) + list(config.items()))
 
 
-class NormalizeForVGG(Layer):
+class VggNormalization(Layer):
 
 	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
@@ -289,11 +289,16 @@ class NormalizeForVGG(Layer):
 		return vgg16.preprocess_input(x)
 
 
-def sampling(args):
-	z_mean, z_log_var = args
+class GaussianSampling(Layer):
 
-	batch = K.shape(z_mean)[0]
-	dim = K.int_shape(z_mean)[1]
+	def __init__(self, **kwargs):
+		super().__init__(**kwargs)
 
-	z_standard = K.random_normal(shape=(batch, dim))
-	return z_mean + K.exp(0.5 * z_log_var) * z_standard
+	def call(self, inputs, **kwargs):
+		z_mean, z_log_var = inputs
+
+		batch = K.shape(z_mean)[0]
+		dim = K.int_shape(z_mean)[1]
+
+		z_standard = K.random_normal(shape=(batch, dim))
+		return z_mean + K.exp(0.5 * z_log_var) * z_standard

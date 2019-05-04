@@ -15,11 +15,7 @@ def preprocess(args):
 	assets = AssetManager(args.base_dir)
 
 	img_dataset = dataset.get_dataset(args.dataset_id, args.dataset_path)
-	identity_map = img_dataset.get_identity_map()
-
-	imgs = dict()
-	for object_id in identity_map.keys():
-		imgs[object_id] = np.stack([imageio.imread(path) for path in identity_map[object_id]], axis=0)
+	imgs = img_dataset.read_images()
 
 	with open(assets.get_preprocess_file_path(args.data_name), 'wb') as fd:
 		pickle.dump(imgs, fd)
