@@ -5,9 +5,18 @@ from abc import ABC, abstractmethod
 import numpy as np
 import imageio
 import PIL
+import h5py
 
 
-supported_datasets = ['smallnorb', 'dsprites', 'noisy-dsprites', 'color-dsprites', 'scream-dsprites', 'cars3d']
+supported_datasets = [
+	'smallnorb',
+	'dsprites',
+	'noisy-dsprites',
+	'color-dsprites',
+	'scream-dsprites',
+	'cars3d',
+	'shapes3d'
+]
 
 
 def get_dataset(dataset_id, path):
@@ -28,6 +37,9 @@ def get_dataset(dataset_id, path):
 
 	if dataset_id == 'cars3d':
 		return Cars3D(path)
+
+	if dataset_id == 'shapes3d':
+		return Shapes3D(path)
 
 	raise Exception('unsupported dataset: %s' % dataset_id)
 
@@ -184,3 +196,45 @@ class Cars3D(DataSet):
 			imgs[object_id] = np.stack([imageio.imread(path) for path in object_img_paths], axis=0)
 
 		return imgs
+
+
+class Shapes3D(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__data_path = os.path.join(base_dir, '3dshapes.h5')
+
+	def __img_index(self, floor_hue, wall_hue, object_hue, scale, shape, orientation):
+		return (
+			floor_hue * 10 * 10 * 8 * 4 * 15
+			+ wall_hue * 10 * 8 * 4 * 15
+			+ object_hue * 8 * 4 * 15
+			+ scale * 4 * 15
+			+ shape * 15
+			+ orientation
+		)
+
+	def read_images(self):
+		with h5py.File(self.__data_path, 'r') as data:
+			data_imgs = data['images']
+
+			img_idxs = dict()
+			for floor_hue in range(10):
+				for wall_hue in range(10):
+					for object_hue in range(10):
+						for scale in range(8):
+							for shape in range(4):
+								for orientation in range(15):
+									img_idx = self.__img_index(floor_hue, wall_hue, object_hue, scale, shape, orientation)
+
+									if shape not in img_idxs:
+										img_idxs[shape] = list()
+
+									img_idxs[shape].append(img_idx)
+
+			imgs = dict()
+			for shape, shape_img_idxs in img_idxs.items():
+				imgs[shape] = data_imgs[shape_img_idxs]
+
+			return imgs
