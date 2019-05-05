@@ -4,9 +4,10 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import imageio
+import PIL
 
 
-supported_datasets = ['smallnorb', 'dsprites', 'cars3d']
+supported_datasets = ['smallnorb', 'dsprites', 'scream-dsprites', 'cars3d']
 
 
 def get_dataset(dataset_id, path):
@@ -15,6 +16,9 @@ def get_dataset(dataset_id, path):
 
 	if dataset_id == 'dsprites':
 		return DSprites(path)
+
+	if dataset_id == 'scream-dsprites':
+		return ScreamDSprites(path)
 
 	if dataset_id == 'cars3d':
 		return Cars3D(path)
@@ -79,6 +83,38 @@ class DSprites(DataSet):
 
 		for shape in range(3):
 			imgs[str(shape)] = (data_imgs[data_classes[:, 1] == shape] * 255)[..., np.newaxis]
+
+		return imgs
+
+
+class ScreamDSprites(DSprites):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__scream_path = os.path.join(base_dir, 'scream.jpg')
+
+		scream_img = PIL.Image.open(self.__scream_path)
+		scream_img.thumbnail((350, 274, 3))
+
+		self.__scream_img = np.array(scream_img) / 255.0
+
+	def __apply_background(self, img):
+		x_crop = np.random.randint(0, self.__scream_img.shape[0] - 64)
+		y_crop = np.random.randint(0, self.__scream_img.shape[1] - 64)
+
+		background = (self.__scream_img[x_crop:x_crop + 64, y_crop:y_crop + 64] + np.random.uniform(0, 1, size=3)) / 2
+
+		mask = (img == 255).squeeze()
+		background[mask] = 1 - background[mask]
+
+		return (background * 255).astype(np.uint8)
+
+	def read_images(self):
+		imgs = super().read_images()
+
+		for shape, shape_imgs in imgs.items():
+			imgs[shape] = np.stack([self.__apply_background(shape_imgs[i]) for i in range(shape_imgs.shape[0])], axis=0)
 
 		return imgs
 
