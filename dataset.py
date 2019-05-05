@@ -7,7 +7,7 @@ import imageio
 import PIL
 
 
-supported_datasets = ['smallnorb', 'dsprites', 'color-dsprites', 'scream-dsprites', 'cars3d']
+supported_datasets = ['smallnorb', 'dsprites', 'noisy-dsprites', 'color-dsprites', 'scream-dsprites', 'cars3d']
 
 
 def get_dataset(dataset_id, path):
@@ -16,6 +16,9 @@ def get_dataset(dataset_id, path):
 
 	if dataset_id == 'dsprites':
 		return DSprites(path)
+
+	if dataset_id == 'noisy-dsprites':
+		return NoisyDSprites(path)
 
 	if dataset_id == 'color-dsprites':
 		return ColorDSprites(path)
@@ -86,6 +89,21 @@ class DSprites(DataSet):
 
 		for shape in range(3):
 			imgs[str(shape)] = (data_imgs[data_classes[:, 1] == shape] * 255)[..., np.newaxis]
+
+		return imgs
+
+
+class NoisyDSprites(DSprites):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+	def read_images(self):
+		imgs = super().read_images()
+
+		for shape, shape_imgs in imgs.items():
+			noise = np.random.uniform(0, 1, size=(shape_imgs.shape[0], 64, 64, 3))
+			imgs[shape] = (np.minimum(shape_imgs / 255.0 + noise, 1.) * 255).astype(np.uint8)
 
 		return imgs
 
