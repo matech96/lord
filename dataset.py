@@ -174,26 +174,25 @@ class Cars3D(DataSet):
 	def __init__(self, base_dir):
 		super().__init__(base_dir)
 
-	def __list_image_paths(self):
-		img_paths = dict()
-
-		regex = re.compile('elevation(\d+)_azimuth(\d+)_object(\d+).png')
-		for file_name in os.listdir(self._base_dir):
-			img_path = os.path.join(self._base_dir, file_name)
-			elevation, azimuth, object_id = regex.match(file_name).groups()
-
-			if object_id not in img_paths:
-				img_paths[object_id] = list()
-
-			img_paths[object_id].append(img_path)
-
-		return img_paths
+		self.__data_path = os.path.join(base_dir, 'cars3d.npz')
 
 	def read_images(self):
-		imgs = dict()
+		data_imgs = np.load(self.__data_path)['imgs']
 
-		for object_id, object_img_paths in self.__list_image_paths().items():
-			imgs[object_id] = np.stack([imageio.imread(path) for path in object_img_paths], axis=0)
+		img_idxs = dict()
+		for elevation in range(4):
+			for azimuth in range(24):
+				for object_id in range(183):
+					img_idx = elevation * 24 * 183 + azimuth * 183 + object_id
+
+					if object_id not in img_idxs:
+						img_idxs[object_id] = list()
+
+					img_idxs[object_id].append(img_idx)
+
+		imgs = dict()
+		for object_id, object_img_idxs in img_idxs.items():
+			imgs[object_id] = data_imgs[object_img_idxs]
 
 		return imgs
 
