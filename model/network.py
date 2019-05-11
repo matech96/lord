@@ -140,6 +140,38 @@ class Converter:
 		evaluation_callback.on_train_end(None)
 
 	@classmethod
+	def __build_pose_embedding(cls, n_imgs, pose_dim):
+		img_id = Input(shape=(1, ))
+
+		pose_embedding_mean = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
+		pose_embedding_mean = Reshape(target_shape=(pose_dim, ))(pose_embedding_mean)
+
+		pose_embedding_log_var = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
+		pose_embedding_log_var = Reshape(target_shape=(pose_dim, ))(pose_embedding_log_var)
+
+		pose_embedding = GaussianSampling()([pose_embedding_mean, pose_embedding_log_var])
+
+		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
+
+		print('pose embedding:')
+		model.summary()
+
+		return model
+
+	@classmethod
+	def __build_identity_embedding(cls, n_identities, identity_dim):
+		identity = Input(shape=(1, ))
+		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim)(identity)
+		identity_embedding = Reshape(target_shape=(identity_dim,))(identity_embedding)
+
+		model = Model(inputs=identity, outputs=identity_embedding, name='identity-embedding')
+
+		print('identity embedding:')
+		model.summary()
+
+		return model
+
+	@classmethod
 	def __build_identity_modulation(cls, identity_dim, n_adain_layers, adain_dim):
 		identity_code = Input(shape=(identity_dim,))
 
@@ -192,38 +224,6 @@ class Converter:
 		model = Model(inputs=[pose_code, identity_adain_params], outputs=target_img, name='generator')
 
 		print('generator arch:')
-		model.summary()
-
-		return model
-
-	@classmethod
-	def __build_pose_embedding(cls, n_imgs, pose_dim):
-		img_id = Input(shape=(1, ))
-
-		pose_embedding_mean = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
-		pose_embedding_mean = Reshape(target_shape=(pose_dim, ))(pose_embedding_mean)
-
-		pose_embedding_log_var = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
-		pose_embedding_log_var = Reshape(target_shape=(pose_dim, ))(pose_embedding_log_var)
-
-		pose_embedding = GaussianSampling()([pose_embedding_mean, pose_embedding_log_var])
-
-		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
-
-		print('pose embedding:')
-		model.summary()
-
-		return model
-
-	@classmethod
-	def __build_identity_embedding(cls, n_identities, identity_dim):
-		identity = Input(shape=(1, ))
-		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim)(identity)
-		identity_embedding = Reshape(target_shape=(identity_dim,))(identity_embedding)
-
-		model = Model(inputs=identity, outputs=identity_embedding, name='identity-embedding')
-
-		print('identity embedding:')
 		model.summary()
 
 		return model
