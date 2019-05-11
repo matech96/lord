@@ -4,11 +4,15 @@ from abc import ABC, abstractmethod
 
 import numpy as np
 import imageio
+import cv2
 import PIL
 import h5py
 
+from keras.datasets import mnist
+
 
 supported_datasets = [
+	'mnist',
 	'smallnorb',
 	'dsprites',
 	'noisy-dsprites',
@@ -19,7 +23,10 @@ supported_datasets = [
 ]
 
 
-def get_dataset(dataset_id, path):
+def get_dataset(dataset_id, path=None):
+	if dataset_id == 'mnist':
+		return Mnist()
+
 	if dataset_id == 'smallnorb':
 		return SmallNorb(path)
 
@@ -46,13 +53,31 @@ def get_dataset(dataset_id, path):
 
 class DataSet(ABC):
 
-	def __init__(self, base_dir):
+	def __init__(self, base_dir=None):
 		super().__init__()
 		self._base_dir = base_dir
 
 	@abstractmethod
 	def read_images(self):
 		pass
+
+
+class Mnist(DataSet):
+
+	def __init__(self):
+		super().__init__()
+
+	def read_images(self):
+		(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+		imgs = dict()
+
+		for digit in range(10):
+			digit_imgs = x_train[y_train == digit]
+			digit_imgs = np.stack([cv2.resize(digit_imgs[i], dsize=(64, 64)) for i in range(digit_imgs.shape[0])], axis=0)
+			imgs[digit] = np.expand_dims(digit_imgs, axis=-1)
+
+		return imgs
 
 
 class SmallNorb(DataSet):
