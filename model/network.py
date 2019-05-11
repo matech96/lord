@@ -203,7 +203,10 @@ class Converter:
 		pose_embedding_mean = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
 		pose_embedding_mean = Reshape(target_shape=(pose_dim, ))(pose_embedding_mean)
 
-		pose_embedding = GaussianSampling(fixed_variance=1.0)(pose_embedding_mean)
+		pose_embedding_log_var = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
+		pose_embedding_log_var = Reshape(target_shape=(pose_dim, ))(pose_embedding_log_var)
+
+		pose_embedding = GaussianSampling()([pose_embedding_mean, pose_embedding_log_var])
 
 		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
 
@@ -289,27 +292,14 @@ class VggNormalization(Layer):
 
 class GaussianSampling(Layer):
 
-	def __init__(self, fixed_variance=None, **kwargs):
+	def __init__(self, **kwargs):
 		super().__init__(**kwargs)
-		self.fixed_variance = fixed_variance
 
 	def call(self, inputs, **kwargs):
-		if self.fixed_variance is not None:
-			z_mean = inputs
-			z_log_var = K.constant(value=np.log(self.fixed_variance), dtype=tf.float32)
-		else:
-			z_mean, z_log_var = inputs
+		z_mean, z_log_var = inputs
 
 		batch = K.shape(z_mean)[0]
 		dim = K.int_shape(z_mean)[1]
 
 		z_standard = K.random_normal(shape=(batch, dim))
 		return z_mean + K.exp(0.5 * z_log_var) * z_standard
-
-	def get_config(self):
-		config = {
-			'fixed_variance': self.fixed_variance
-		}
-
-		base_config = super().get_config()
-		return dict(list(base_config.items()) + list(config.items()))
