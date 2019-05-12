@@ -40,23 +40,11 @@ class AssetManager:
 		self.__recreate_dir(model_dir)
 		return model_dir
 
-	def recreate_model_checkpoint_dir(self, model_name):
-		checkpoint_dir = os.path.join(self.__out_dir, model_name, 'checkpoints')
-
-		self.__recreate_dir(checkpoint_dir)
-		return checkpoint_dir
-
 	def recreate_tensorboard_dir(self, model_name):
 		tensorboard_dir = os.path.join(self.__tensorboard_dir, model_name)
 
 		self.__recreate_dir(tensorboard_dir)
 		return tensorboard_dir
-
-	def recreate_log_dir(self, model_name):
-		log_dir = os.path.join(self.__models_dir, model_name, 'logs')
-
-		self.__recreate_dir(log_dir)
-		return log_dir
 
 	def create_prediction_dir(self, model_name):
 		prediction_dir = os.path.join(self.__out_dir, model_name, '{:%Y-%m-%d_%H-%M-%S}'.format(datetime.now()))
