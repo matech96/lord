@@ -29,7 +29,7 @@ class AssetManager:
 			os.mkdir(self.__out_dir)
 
 	def get_preprocess_file_path(self, data_name):
-		return os.path.join(self.__preprocess_dir, data_name + '.pkl')
+		return os.path.join(self.__preprocess_dir, data_name + '.npz')
 
 	def get_model_dir(self, model_name):
 		return os.path.join(self.__models_dir, model_name)

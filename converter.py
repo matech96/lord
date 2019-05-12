@@ -1,6 +1,4 @@
 import argparse
-import pickle
-
 import numpy as np
 
 import dataset
@@ -13,30 +11,32 @@ def preprocess(args):
 	assets = AssetManager(args.base_dir)
 
 	img_dataset = dataset.get_dataset(args.dataset_id, args.dataset_path)
-	imgs = img_dataset.read_images()
+	imgs, identities, poses = img_dataset.read_images()
 
-	with open(assets.get_preprocess_file_path(args.data_name), 'wb') as fd:
-		pickle.dump(imgs, fd)
+	np.savez(assets.get_preprocess_file_path(args.data_name), imgs=imgs, identities=identities, poses=poses)
 
 
-def load_data(path, max_identities, max_images_per_identity):
-	with open(path, 'rb') as fd:
-		data = pickle.load(fd)
+def split_identities(args):
+	assets = AssetManager(args.base_dir)
 
-	imgs = []
-	img_identities = []
+	data = np.load(assets.get_preprocess_file_path(args.input_data_name))
+	imgs, identities, poses = data['imgs'], data['identities'], data['poses']
 
-	identities = list(data.keys())[:max_identities]
-	for i, identity in enumerate(identities):
-		identity_imgs = data[identity][:max_images_per_identity]
+	n_identities = np.unique(identities).size
+	test_identities = np.random.choice(n_identities, size=args.num_test_identities, replace=False)
 
-		imgs.append(identity_imgs)
-		img_identities.append(np.full(shape=(identity_imgs.shape[0], ), fill_value=i))
+	test_idx = np.isin(identities, test_identities)
+	train_idx = ~np.isin(identities, test_identities)
 
-	imgs = np.concatenate(imgs, axis=0) / 255.0
-	img_identities = np.concatenate(img_identities, axis=0)
+	np.savez(
+		file=assets.get_preprocess_file_path(args.test_data_name),
+		imgs=imgs[test_idx], identities=identities[test_idx], poses=poses[test_idx], n_identities=n_identities
+	)
 
-	return imgs, img_identities
+	np.savez(
+		file=assets.get_preprocess_file_path(args.train_data_name),
+		imgs=imgs[train_idx], identities=identities[train_idx], poses=poses[train_idx], n_identities=n_identities
+	)
 
 
 def train(args):
@@ -44,16 +44,15 @@ def train(args):
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	imgs, img_identities = load_data(
-		path=assets.get_preprocess_file_path(args.data_name),
-		max_identities=args.max_identities,
-		max_images_per_identity=args.max_images_per_identity
-	)
+	data = np.load(assets.get_preprocess_file_path(args.data_name))
+	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
+
+	imgs = imgs.astype(np.float32) / 255.0
 
 	converter = Converter.build(
 		img_shape=imgs.shape[1:],
 		n_imgs=imgs.shape[0],
-		n_identities=img_identities.max() + 1,
+		n_identities=n_identities,
 
 		pose_dim=args.pose_dim,
 		identity_dim=args.identity_dim,
@@ -64,7 +63,7 @@ def train(args):
 
 	converter.train(
 		imgs=imgs,
-		identities=img_identities,
+		identities=identities,
 
 		batch_size=default_config['batch_size'],
 		n_epochs=default_config['n_epochs'],
@@ -84,11 +83,10 @@ def test(args):
 	model_dir = assets.get_model_dir(args.model_name)
 	prediction_dir = assets.create_prediction_dir(args.model_name)
 
-	imgs, img_identities = load_data(
-		path=assets.get_preprocess_file_path(args.data_name),
-		max_identities=args.max_identities,
-		max_images_per_identity=args.max_images_per_identity
-	)
+	data = np.load(assets.get_preprocess_file_path(args.data_name))
+	imgs = data['imgs']
+
+	imgs = imgs.astype(np.float32) / 255.0
 
 	converter = Converter.load(model_dir)
 
@@ -118,21 +116,24 @@ def main():
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
 
+	split_identities_parser = action_parsers.add_parser('split-identities')
+	split_identities_parser.add_argument('-idn', '--input-data-name', type=str, required=True)
+	split_identities_parser.add_argument('-trdn', '--train-data-name', type=str, required=True)
+	split_identities_parser.add_argument('-tsdn', '--test-data-name', type=str, required=True)
+	split_identities_parser.add_argument('-ntsi', '--num-test-identities', type=int, required=True)
+	split_identities_parser.set_defaults(func=split_identities)
+
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	train_parser.add_argument('-pd', '--pose-dim', type=int, required=True)
 	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
-	train_parser.add_argument('-mi', '--max-identities', type=int, required=True)
-	train_parser.add_argument('-mipi', '--max-images-per-identity', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
 	test_parser = action_parsers.add_parser('test')
 	test_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	test_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	test_parser.add_argument('-mi', '--max-identities', type=int, required=True)
-	test_parser.add_argument('-mipi', '--max-images-per-identity', type=int, required=True)
 	test_parser.set_defaults(func=test)
 
 	args = parser.parse_args()

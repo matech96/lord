@@ -21,13 +21,13 @@ class TrainEvaluationCallback(TensorBoard):
 		self.__identity_modulation = identity_modulation
 		self.__generator = generator
 
-		self.__n_identities_per_evaluation = min(self.__identities.max() + 1, 5)
+		self.__n_identities_per_evaluation = min(np.unique(self.__identities).size, 5)
 		self.__n_poses_per_evaluation = 5
 
 	def on_epoch_end(self, epoch, logs={}):
 		super().on_epoch_end(epoch, logs)
 
-		identities = np.random.choice(self.__identities.max() + 1, size=self.__n_identities_per_evaluation, replace=False)
+		identities = np.random.choice(np.unique(self.__identities), size=self.__n_identities_per_evaluation, replace=False)
 		reference_identity = identities[0]
 
 		reference_identity_img_ids = np.where(self.__identities == reference_identity)[0]
