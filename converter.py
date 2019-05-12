@@ -39,6 +39,31 @@ def split_identities(args):
 	)
 
 
+def split_samples(args):
+	assets = AssetManager(args.base_dir)
+
+	data = np.load(assets.get_preprocess_file_path(args.input_data_name))
+	imgs, identities, poses = data['imgs'], data['identities'], data['poses']
+
+	n_identities = np.unique(identities).size
+	n_samples = imgs.shape[0]
+
+	n_test_samples = int(n_samples * args.test_split)
+
+	test_idx = np.random.choice(n_samples, size=n_test_samples, replace=False)
+	train_idx = ~np.isin(np.arange(n_samples), test_idx)
+
+	np.savez(
+		file=assets.get_preprocess_file_path(args.test_data_name),
+		imgs=imgs[test_idx], identities=identities[test_idx], poses=poses[test_idx], n_identities=n_identities
+	)
+
+	np.savez(
+		file=assets.get_preprocess_file_path(args.train_data_name),
+		imgs=imgs[train_idx], identities=identities[train_idx], poses=poses[train_idx], n_identities=n_identities
+	)
+
+
 def train(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
@@ -122,6 +147,13 @@ def main():
 	split_identities_parser.add_argument('-tsdn', '--test-data-name', type=str, required=True)
 	split_identities_parser.add_argument('-ntsi', '--num-test-identities', type=int, required=True)
 	split_identities_parser.set_defaults(func=split_identities)
+
+	split_samples_parser = action_parsers.add_parser('split-samples')
+	split_samples_parser.add_argument('-idn', '--input-data-name', type=str, required=True)
+	split_samples_parser.add_argument('-trdn', '--train-data-name', type=str, required=True)
+	split_samples_parser.add_argument('-tsdn', '--test-data-name', type=str, required=True)
+	split_samples_parser.add_argument('-ts', '--test-split', type=float, required=True)
+	split_samples_parser.set_defaults(func=split_samples)
 
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
