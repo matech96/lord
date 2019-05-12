@@ -161,8 +161,9 @@ class Converter:
 	@classmethod
 	def __build_identity_embedding(cls, n_identities, identity_dim):
 		identity = Input(shape=(1, ))
+
 		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim)(identity)
-		identity_embedding = Reshape(target_shape=(identity_dim,))(identity_embedding)
+		identity_embedding = Reshape(target_shape=(identity_dim, ))(identity_embedding)
 
 		model = Model(inputs=identity, outputs=identity_embedding, name='identity-embedding')
 
@@ -173,7 +174,7 @@ class Converter:
 
 	@classmethod
 	def __build_identity_modulation(cls, identity_dim, n_adain_layers, adain_dim):
-		identity_code = Input(shape=(identity_dim,))
+		identity_code = Input(shape=(identity_dim, ))
 
 		adain_per_layer = [Dense(units=adain_dim * 2)(identity_code) for _ in range(n_adain_layers)]
 		adain_all = Concatenate(axis=-1)(adain_per_layer)
@@ -188,7 +189,7 @@ class Converter:
 
 	@classmethod
 	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim, img_shape):
-		pose_code = Input(shape=(pose_dim,))
+		pose_code = Input(shape=(pose_dim, ))
 		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
 		initial_height = img_shape[0] // (2 ** n_adain_layers)
