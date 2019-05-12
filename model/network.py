@@ -11,7 +11,7 @@ from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding
 from keras.models import Model, load_model
 from keras.applications import vgg16
 
-from model.evaluation import EvaluationCallback
+from model.evaluation import TrainEvaluationCallback, TestEvaluationCallback
 
 
 class Converter:
@@ -45,9 +45,13 @@ class Converter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
 			config = pickle.load(config_fd)
 
-		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'))
+		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'), custom_objects={
+			'GaussianSampling': GaussianSampling
+		})
+
 		identity_embedding = load_model(os.path.join(model_dir, 'identity_embedding.h5py'))
 		identity_modulation = load_model(os.path.join(model_dir, 'identity_modulation.h5py'))
+
 		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
@@ -109,7 +113,7 @@ class Converter:
 			)
 		)
 
-		evaluation_callback = EvaluationCallback(imgs, identities,
+		evaluation_callback = TrainEvaluationCallback(imgs, identities,
 			self.pose_embedding, self.identity_embedding,
 			self.identity_modulation, self.generator,
 			tensorboard_dir
@@ -126,16 +130,79 @@ class Converter:
 				'loss': loss_val[0],
 				'pose_lr': K.get_value(pose_optimizer.lr),
 				'identity_lr': K.get_value(identity_optimizer.lr),
+				'identity_modulation_lr': K.get_value(identity_modulation_optimizer.lr),
 				'generator_lr': K.get_value(generator_optimizer.lr)
 			})
 
 			if e % n_epochs_per_decay == 0:
 				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
 				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
+				K.set_value(identity_modulation_optimizer.lr, K.get_value(identity_modulation_optimizer.lr) * 0.5)
 				K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
 
 			if e % n_epochs_per_checkpoint == 0:
 				self.save(model_dir)
+
+		evaluation_callback.on_train_end(None)
+
+	def test(self, imgs,
+			 batch_size, n_epochs,
+			 n_epochs_per_decay, n_epochs_per_checkpoint,
+			 prediction_dir):
+
+		pose_embedding = self.__build_pose_embedding(n_imgs=imgs.shape[0], pose_dim=self.config.pose_dim)
+		identity_embedding = self.__build_identity_embedding(n_identities=imgs.shape[0], identity_dim=self.config.identity_dim)
+
+		img_id = K.placeholder(shape=(batch_size, 1))
+		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
+
+		pose_code = pose_embedding(img_id)
+		identity_code = identity_embedding(img_id)
+		identity_adain_params = self.identity_modulation(identity_code)
+		generated_img = self.generator([pose_code, identity_adain_params])
+
+		target_perceptual_codes = self.vgg(target_img)
+		generated_perceptual_codes = self.vgg(generated_img)
+
+		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))  # + gamma * K.mean(K.abs(pose_code))
+
+		pose_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
+		identity_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
+
+		train_function = K.function(
+			inputs=[img_id, target_img], outputs=[loss],
+			updates=(
+				pose_optimizer.get_updates(loss, pose_embedding.trainable_weights)
+				+ identity_optimizer.get_updates(loss, identity_embedding.trainable_weights)
+			)
+		)
+
+		evaluation_callback = TestEvaluationCallback(imgs,
+			pose_embedding, identity_embedding,
+			self.identity_modulation, self.generator,
+			prediction_dir
+		)
+
+		n_samples = imgs.shape[0]
+		for e in range(1, n_epochs + 1):
+			epoch_idx = np.random.permutation(n_samples)
+			for i in np.arange(start=0, stop=(n_samples - batch_size + 1), step=batch_size):
+				batch_idx = epoch_idx[i:(i + batch_size)]
+				loss_val = train_function([batch_idx, imgs[batch_idx]])
+
+			evaluation_callback.on_epoch_end(epoch=e, logs={
+				'loss': loss_val[0],
+				'pose_lr': K.get_value(pose_optimizer.lr),
+				'identity_lr': K.get_value(identity_optimizer.lr)
+			})
+
+			if e % n_epochs_per_decay == 0:
+				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
+				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
+
+			if e % n_epochs_per_checkpoint == 0:
+				pose_embedding.save(os.path.join(prediction_dir, 'pose_embedding.h5py'))
+				identity_embedding.save(os.path.join(prediction_dir, 'identity_embedding.h5py'))
 
 		evaluation_callback.on_train_end(None)
 

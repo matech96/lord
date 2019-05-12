@@ -1,6 +1,4 @@
 import argparse
-import os
-import imageio
 import pickle
 
 import numpy as np
@@ -21,31 +19,41 @@ def preprocess(args):
 		pickle.dump(imgs, fd)
 
 
+def load_data(path, max_identities, max_images_per_identity):
+	with open(path, 'rb') as fd:
+		data = pickle.load(fd)
+
+	imgs = []
+	img_identities = []
+
+	identities = list(data.keys())[:max_identities]
+	for i, identity in enumerate(identities):
+		identity_imgs = data[identity][:max_images_per_identity]
+
+		imgs.append(identity_imgs)
+		img_identities.append(np.full(shape=(identity_imgs.shape[0], ), fill_value=i))
+
+	imgs = np.concatenate(imgs, axis=0) / 255.0
+	img_identities = np.concatenate(img_identities, axis=0)
+
+	return imgs, img_identities
+
+
 def train(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
-	with open(assets.get_preprocess_file_path(args.data_name), 'rb') as fd:
-		data = pickle.load(fd)
+	imgs, img_identities = load_data(
+		path=assets.get_preprocess_file_path(args.data_name),
+		max_identities=args.max_identities,
+		max_images_per_identity=args.max_images_per_identity
+	)
 
-		imgs = []
-		img_identities = []
-
-		identities = list(data.keys())[:args.max_identities]
-		for i, identity in enumerate(identities):
-			identity_imgs = data[identity][:args.max_images_per_identity]
-
-			imgs.append(identity_imgs)
-			img_identities.append(np.full(shape=(identity_imgs.shape[0], ), fill_value=i))
-
-		imgs = np.concatenate(imgs, axis=0) / 255.0
-		img_identities = np.concatenate(img_identities, axis=0)
-
-	face_converter = Converter.build(
+	converter = Converter.build(
 		img_shape=imgs.shape[1:],
 		n_imgs=imgs.shape[0],
-		n_identities=len(identities),
+		n_identities=img_identities.max() + 1,
 
 		pose_dim=args.pose_dim,
 		identity_dim=args.identity_dim,
@@ -54,7 +62,7 @@ def train(args):
 		adain_dim=default_config['adain_dim']
 	)
 
-	face_converter.train(
+	converter.train(
 		imgs=imgs,
 		identities=img_identities,
 
@@ -68,29 +76,33 @@ def train(args):
 		tensorboard_dir=tensorboard_dir
 	)
 
-	face_converter.save(model_dir)
+	converter.save(model_dir)
 
 
-def convert(args):
+def test(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.get_model_dir(args.model_name)
 	prediction_dir = assets.create_prediction_dir(args.model_name)
 
-	face_converter = Converter.load(model_dir)
+	imgs, img_identities = load_data(
+		path=assets.get_preprocess_file_path(args.data_name),
+		max_identities=args.max_identities,
+		max_images_per_identity=args.max_images_per_identity
+	)
 
-	target_img = imageio.imread(args.target_img_path)
-	target_img = target_img.astype(np.float64) / 255
+	converter = Converter.load(model_dir)
 
-	for source_img_path in args.source_img_paths:
-		source_img = imageio.imread(source_img_path)
-		source_img = source_img.astype(np.float64) / 255
+	converter.test(
+		imgs=imgs,
 
-		converted_img = face_converter.converter.predict([
-			source_img[np.newaxis, ..., np.newaxis], target_img[np.newaxis, ..., np.newaxis]
-		])[0, ..., 0]
+		batch_size=default_config['batch_size'],
+		n_epochs=default_config['n_epochs'],
 
-		merged_img = np.concatenate((source_img, target_img, converted_img), axis=1)
-		imageio.imwrite(os.path.join(prediction_dir, os.path.basename(source_img_path)), merged_img)
+		n_epochs_per_decay=default_config['n_epochs_per_decay'],
+		n_epochs_per_checkpoint=default_config['n_epochs_per_checkpoint'],
+
+		prediction_dir=prediction_dir
+	)
 
 
 def main():
@@ -116,11 +128,12 @@ def main():
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
-	convert_parser = action_parsers.add_parser('convert')
-	convert_parser.add_argument('-sp', '--source-img-paths', type=str, nargs='+', required=True)
-	convert_parser.add_argument('-tp', '--target-img-path', type=str, required=True)
-	convert_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	convert_parser.set_defaults(func=convert)
+	test_parser = action_parsers.add_parser('test')
+	test_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	test_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	test_parser.add_argument('-mi', '--max-identities', type=int, required=True)
+	test_parser.add_argument('-mipi', '--max-images-per-identity', type=int, required=True)
+	test_parser.set_defaults(func=test)
 
 	args = parser.parse_args()
 	args.func(args)
