@@ -12,8 +12,12 @@ def preprocess(args):
 
 	img_dataset = dataset.get_dataset(args.dataset_id, args.dataset_path)
 	imgs, identities, poses = img_dataset.read_images()
+	n_identities = np.unique(identities).size
 
-	np.savez(assets.get_preprocess_file_path(args.data_name), imgs=imgs, identities=identities, poses=poses)
+	np.savez(
+		file=assets.get_preprocess_file_path(args.data_name),
+		imgs=imgs, identities=identities, poses=poses, n_identities=n_identities
+	)
 
 
 def split_identities(args):
