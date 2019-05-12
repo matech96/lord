@@ -105,7 +105,11 @@ class SmallNorb(DataSet):
 		imgs = dict()
 
 		for object_id, object_img_paths in self.__list_image_paths().items():
-			imgs[object_id] = np.stack([imageio.imread(path)[..., np.newaxis] for path in object_img_paths], axis=0)
+			object_imgs = [imageio.imread(path) for path in object_img_paths]
+			object_imgs = [cv2.resize(img, dsize=(64, 64)) for img in object_imgs]
+			object_imgs = np.stack(object_imgs, axis=0)
+
+			imgs[object_id] = np.expand_dims(object_imgs, axis=-1)
 
 		return imgs
 
