@@ -67,31 +67,27 @@ class TestEvaluationCallback(TensorBoard):
 		self.__identity_modulation = identity_modulation
 		self.__generator = generator
 
-		self.__n_identities_per_evaluation = 10
-		self.__n_poses_per_evaluation = 10
+		self.__n_samples_per_evaluation = 10
 
 	def on_epoch_end(self, epoch, logs={}):
 		super().on_epoch_end(epoch, logs)
 
-		img_ids_for_identity = np.random.choice(self.__imgs.shape[0], size=self.__n_identities_per_evaluation, replace=False)
-		img_ids_for_pose = np.random.choice(self.__imgs.shape[0], size=self.__n_poses_per_evaluation, replace=False)
+		img_ids = np.random.choice(self.__imgs.shape[0], size=self.__n_samples_per_evaluation, replace=False)
 
-		imgs_for_identity = self.__imgs[img_ids_for_identity]
-		imgs_for_pose = self.__imgs[img_ids_for_pose]
-
-		pose_codes = self.__pose_embedding.predict(img_ids_for_pose)
-		identity_codes = self.__identity_embedding.predict(img_ids_for_identity)
+		pose_codes = self.__pose_embedding.predict(img_ids)
+		identity_codes = self.__identity_embedding.predict(img_ids)
 		identity_adain_params = self.__identity_modulation.predict(identity_codes)
 
-		blank = np.zeros_like(imgs_for_pose[0])
-		output = [np.concatenate([blank] + list(imgs_for_pose), axis=1)]
-		for i in range(self.__n_identities_per_evaluation):
-			imgs = [imgs_for_identity[i]] + [
+		imgs = self.__imgs[img_ids]
+		blank = np.zeros_like(imgs[0])
+		output = [np.concatenate([blank] + list(imgs), axis=1)]
+		for i in range(self.__n_samples_per_evaluation):
+			converted_imgs = [imgs[i]] + [
 				self.model.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
-				for j in range(self.__n_poses_per_evaluation)
+				for j in range(self.__n_samples_per_evaluation)
 			]
 
-			output.append(np.concatenate(imgs, axis=1))
+			output.append(np.concatenate(converted_imgs, axis=1))
 
 		merged_img = np.concatenate(output, axis=0)
 

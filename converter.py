@@ -94,11 +94,11 @@ def train(args):
 		imgs=imgs,
 		identities=identities,
 
-		batch_size=default_config['batch_size'],
-		n_epochs=default_config['n_epochs'],
+		batch_size=default_config['train']['batch_size'],
+		n_epochs=default_config['train']['n_epochs'],
 
-		n_epochs_per_decay=default_config['n_epochs_per_decay'],
-		n_epochs_per_checkpoint=default_config['n_epochs_per_checkpoint'],
+		n_epochs_per_decay=default_config['train']['n_epochs_per_decay'],
+		n_epochs_per_checkpoint=default_config['train']['n_epochs_per_checkpoint'],
 
 		model_dir=model_dir,
 		tensorboard_dir=tensorboard_dir
@@ -122,11 +122,11 @@ def test(args):
 	converter.test(
 		imgs=imgs,
 
-		batch_size=default_config['batch_size'],
-		n_epochs=default_config['n_epochs'],
+		batch_size=default_config['test']['batch_size'],
+		n_epochs=default_config['test']['n_epochs'],
 
-		n_epochs_per_decay=default_config['n_epochs_per_decay'],
-		n_epochs_per_checkpoint=default_config['n_epochs_per_checkpoint'],
+		n_epochs_per_decay=default_config['test']['n_epochs_per_decay'],
+		n_epochs_per_checkpoint=default_config['test']['n_epochs_per_checkpoint'],
 
 		prediction_dir=prediction_dir
 	)
@@ -170,6 +170,7 @@ def main():
 	test_parser = action_parsers.add_parser('test')
 	test_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	test_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	test_parser.add_argument('-g', '--gpus', type=int, default=1)
 	test_parser.set_defaults(func=test)
 
 	args = parser.parse_args()

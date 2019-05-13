@@ -166,8 +166,9 @@ class Converter:
 
 		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))  # + gamma * K.mean(K.abs(pose_code))
 
-		pose_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
-		identity_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
+		# Note: lr is multiplied by batchsize since each pose and identity are involved in a single sample withing a batch
+		pose_optimizer = optimizers.Adam(lr=batch_size * 1e-3, beta_1=0.5, beta_2=0.999)
+		identity_optimizer = optimizers.Adam(lr=batch_size * 1e-3, beta_1=0.5, beta_2=0.999)
 
 		train_function = K.function(
 			inputs=[img_id, target_img], outputs=[loss],
