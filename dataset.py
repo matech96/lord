@@ -13,7 +13,7 @@ from keras.datasets import mnist
 
 supported_datasets = [
 	# 'mnist',
-	# 'smallnorb',
+	'smallnorb',
 	# 'dsprites',
 	# 'noisy-dsprites',
 	# 'color-dsprites',
@@ -27,8 +27,8 @@ def get_dataset(dataset_id, path=None):
 	# if dataset_id == 'mnist':
 	# 	return Mnist()
 
-	# if dataset_id == 'smallnorb':
-	# 	return SmallNorb(path)
+	if dataset_id == 'smallnorb':
+		return SmallNorb(path)
 
 	# if dataset_id == 'dsprites':
 	# 	return DSprites(path)
@@ -80,38 +80,48 @@ class DataSet(ABC):
 # 		return imgs
 
 
-# class SmallNorb(DataSet):
-#
-# 	def __init__(self, base_dir):
-# 		super().__init__(base_dir)
-#
-# 	def __list_image_paths(self):
-# 		img_paths = dict()
-#
-# 		regex = re.compile('(\d+)_(\w+)_(\d+)_azimuth(\d+)_elevation(\d+)_lighting(\d+)_(\w+).jpg')
-# 		for file_name in os.listdir(self._base_dir):
-# 			img_path = os.path.join(self._base_dir, file_name)
-# 			img_id, category, instance, azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
-#
-# 			object_id = '_'.join((category, instance, elevation, lighting, lt_rt))
-# 			if object_id not in img_paths:
-# 				img_paths[object_id] = list()
-#
-# 			img_paths[object_id].append(img_path)
-#
-# 		return img_paths
-#
-# 	def read_images(self):
-# 		imgs = dict()
-#
-# 		for object_id, object_img_paths in self.__list_image_paths().items():
-# 			object_imgs = [imageio.imread(path) for path in object_img_paths]
-# 			object_imgs = [cv2.resize(img, dsize=(64, 64)) for img in object_imgs]
-# 			object_imgs = np.stack(object_imgs, axis=0)
-#
-# 			imgs[object_id] = np.expand_dims(object_imgs, axis=-1)
-#
-# 		return imgs
+class SmallNorb(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+	def __list_imgs(self):
+		img_paths = []
+		identity_ids = []
+		pose_ids = []
+
+		regex = re.compile('(\d+)_(\w+)_(\d+)_azimuth(\d+)_elevation(\d+)_lighting(\d+)_(\w+).jpg')
+		for file_name in os.listdir(self._base_dir):
+			img_path = os.path.join(self._base_dir, file_name)
+			img_id, category, instance, azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
+
+			identity_id = '_'.join((category, instance, elevation, lighting, lt_rt))
+			pose_id = azimuth
+
+			img_paths.append(img_path)
+			identity_ids.append(identity_id)
+			pose_ids.append(pose_id)
+
+		return img_paths, identity_ids, pose_ids
+
+	def read_images(self):
+		img_paths, identity_ids, pose_ids = self.__list_imgs()
+
+		unique_identity_ids = list(set(identity_ids))
+		unique_pose_ids = list(set(pose_ids))
+
+		imgs = np.empty(shape=(len(img_paths), 64, 64, 1), dtype=np.uint8)
+		identities = np.empty(shape=(len(img_paths), ), dtype=np.uint32)
+		poses = np.empty(shape=(len(img_paths), ), dtype=np.uint32)
+
+		for i in range(len(img_paths)):
+			img = imageio.imread(img_paths[i])
+			imgs[i, :, :, 0] = cv2.resize(img, dsize=(64, 64))
+
+			identities[i] = unique_identity_ids.index(identity_ids[i])
+			poses[i] = unique_pose_ids.index(pose_ids[i])
+
+		return imgs, identities, poses
 
 
 # class DSprites(DataSet):
