@@ -75,7 +75,6 @@ def train(args):
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
-
 	imgs = imgs.astype(np.float32) / 255.0
 
 	converter = Converter.build(
@@ -107,6 +106,34 @@ def train(args):
 	converter.save(model_dir)
 
 
+def train_encoders(args):
+	assets = AssetManager(args.base_dir)
+	model_dir = assets.get_model_dir(args.model_name)
+	tensorboard_dir = assets.get_tensorboard_dir(args.model_name)
+
+	data = np.load(assets.get_preprocess_file_path(args.data_name))
+	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
+	imgs = imgs.astype(np.float32) / 255.0
+
+	converter = Converter.load(model_dir)
+
+	converter.train_encoders(
+		imgs=imgs,
+		identities=identities,
+
+		batch_size=default_config['train_encoders']['batch_size'],
+		n_epochs=default_config['train_encoders']['n_epochs'],
+
+		n_epochs_per_decay=default_config['train_encoders']['n_epochs_per_decay'],
+		n_epochs_per_checkpoint=default_config['train_encoders']['n_epochs_per_checkpoint'],
+
+		model_dir=model_dir,
+		tensorboard_dir=tensorboard_dir
+	)
+
+	converter.save(model_dir)
+
+
 def test(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.get_model_dir(args.model_name)
@@ -114,22 +141,10 @@ def test(args):
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs = data['imgs']
-
 	imgs = imgs.astype(np.float32) / 255.0
 
 	converter = Converter.load(model_dir)
-
-	converter.test(
-		imgs=imgs,
-
-		batch_size=default_config['test']['batch_size'],
-		n_epochs=default_config['test']['n_epochs'],
-
-		n_epochs_per_decay=default_config['test']['n_epochs_per_decay'],
-		n_epochs_per_checkpoint=default_config['test']['n_epochs_per_checkpoint'],
-
-		prediction_dir=prediction_dir
-	)
+	converter.test(imgs=imgs, prediction_dir=prediction_dir, n_samples=args.num_samples)
 
 
 def main():
@@ -167,9 +182,16 @@ def main():
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
+	train_encoders_parser = action_parsers.add_parser('train-encoders')
+	train_encoders_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	train_encoders_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	train_encoders_parser.add_argument('-g', '--gpus', type=int, default=1)
+	train_encoders_parser.set_defaults(func=train_encoders)
+
 	test_parser = action_parsers.add_parser('test')
 	test_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	test_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	test_parser.add_argument('-ns', '--num-samples', type=int, default=10)
 	test_parser.add_argument('-g', '--gpus', type=int, default=1)
 	test_parser.set_defaults(func=test)
 
