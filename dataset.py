@@ -95,8 +95,8 @@ class SmallNorb(DataSet):
 			img_path = os.path.join(self._base_dir, file_name)
 			img_id, category, instance, azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
-			identity_id = '_'.join((category, instance, elevation, lighting, lt_rt))
-			pose_id = azimuth
+			identity_id = '_'.join((category, instance))
+			pose_id = '_'.join((azimuth, elevation, lighting, lt_rt))
 
 			img_paths.append(img_path)
 			identity_ids.append(identity_id)
