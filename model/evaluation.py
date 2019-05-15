@@ -31,7 +31,7 @@ class TrainEvaluationCallback(TensorBoard):
 		reference_identity = identities[0]
 
 		reference_identity_img_ids = np.where(self.__identities == reference_identity)[0]
-		img_ids = np.random.choice(reference_identity_img_ids, size=self.__n_poses_per_evaluation, replace=False)
+		img_ids = np.random.choice(reference_identity_img_ids, size=self.__n_poses_per_evaluation)
 
 		imgs = self.__imgs[img_ids]
 		pose_codes = self.__pose_embedding.predict(img_ids)
