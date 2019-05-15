@@ -20,6 +20,7 @@ supported_datasets = [
 	# 'scream-dsprites',
 	'cars3d',
 	# 'shapes3d'
+	'celeba'
 ]
 
 
@@ -47,6 +48,9 @@ def get_dataset(dataset_id, path=None):
 
 	# if dataset_id == 'shapes3d':
 	# 	return Shapes3D(path)
+
+	if dataset_id == 'celeba':
+		return CelebA(path)
 
 	raise Exception('unsupported dataset: %s' % dataset_id)
 
@@ -271,3 +275,54 @@ class Cars3D(DataSet):
 # 				imgs[shape] = data_imgs[shape_img_idxs]
 #
 # 			return imgs
+
+
+class CelebA(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__imgs_dir = os.path.join(self._base_dir, 'Img', 'img_align_celeba_png.7z', 'img_align_celeba_png')
+		self.__identity_map_path = os.path.join(self._base_dir, 'Anno', 'identity_CelebA.txt')
+
+	def __list_imgs(self):
+		with open(self.__identity_map_path, 'r') as fd:
+			lines = fd.read().splitlines()
+
+		img_paths = []
+		identity_ids = []
+
+		for line in lines:
+			img_name, identity_id = line.split(' ')
+			img_path = os.path.join(self.__imgs_dir, os.path.splitext(img_name)[0] + '.png')
+
+			img_paths.append(img_path)
+			identity_ids.append(identity_id)
+
+		return img_paths, identity_ids
+
+	def read_images(self, crop_size=(128, 128), target_size=(64, 64)):
+		img_paths, identity_ids = self.__list_imgs()
+
+		unique_identity_ids = list(set(identity_ids))
+
+		imgs = np.empty(shape=(len(img_paths), 64, 64, 3), dtype=np.uint8)
+		identities = np.empty(shape=(len(img_paths), ), dtype=np.uint32)
+		poses = np.zeros(shape=(len(img_paths), ), dtype=np.uint32)
+
+		for i in range(len(img_paths)):
+			img = imageio.imread(img_paths[i])
+
+			if crop_size:
+				img = img[
+					(img.shape[0] // 2 - crop_size[0] // 2):(img.shape[0] // 2 + crop_size[0] // 2),
+					(img.shape[1] // 2 - crop_size[1] // 2):(img.shape[1] // 2 + crop_size[1] // 2)
+				]
+
+			if target_size:
+				img = cv2.resize(img, dsize=target_size)
+
+			imgs[i] = img
+			identities[i] = unique_identity_ids.index(identity_ids[i])
+
+		return imgs, identities, poses
