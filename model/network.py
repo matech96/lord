@@ -167,7 +167,7 @@ class Converter:
 
 		evaluation_callback.on_train_end(None)
 
-	def train_encoders(self, imgs, identities,
+	def train_encoders(self, imgs, identities, embeddings_weight,
 					   batch_size, n_epochs,
 					   n_epochs_per_decay, n_epochs_per_checkpoint,
 					   model_dir, tensorboard_dir):
@@ -191,9 +191,7 @@ class Converter:
 		identity_loss = K.mean(K.abs(identity_code - self.identity_embedding(identity)))
 		reconstruction_loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
 
-		pose_coeff = 1e2
-		identity_coeff = 1e2
-		loss = reconstruction_loss + pose_coeff * pose_loss + identity_coeff * identity_loss
+		loss = reconstruction_loss + embeddings_weight * pose_loss + embeddings_weight * identity_loss
 
 		optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
 		trainable_weights = (
