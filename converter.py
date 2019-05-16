@@ -1,4 +1,6 @@
 import argparse
+import os
+
 import numpy as np
 
 import dataset
@@ -115,7 +117,12 @@ def train_encoders(args):
 	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
 	imgs = imgs.astype(np.float32) / 255.0
 
-	converter = Converter.load(model_dir)
+	converter = Converter.load(model_dir, include_encoders=False)
+
+	glo_backup_dir = os.path.join(model_dir, args.glo_dir)
+	if not os.path.exists(glo_backup_dir):
+		os.mkdir(glo_backup_dir)
+		converter.save(glo_backup_dir)
 
 	converter.train_encoders(
 		imgs=imgs,
@@ -143,7 +150,7 @@ def test(args):
 	imgs = data['imgs']
 	imgs = imgs.astype(np.float32) / 255.0
 
-	converter = Converter.load(model_dir)
+	converter = Converter.load(model_dir, include_encoders=True)
 	converter.test(imgs=imgs, prediction_dir=prediction_dir, n_samples=args.num_samples)
 
 
@@ -185,6 +192,7 @@ def main():
 	train_encoders_parser = action_parsers.add_parser('train-encoders')
 	train_encoders_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_encoders_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	train_encoders_parser.add_argument('-gd', '--glo-dir', type=str, default='glo')
 	train_encoders_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_encoders_parser.set_defaults(func=train_encoders)
 

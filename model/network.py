@@ -37,13 +37,10 @@ class Converter:
 		identity_modulation = cls.__build_identity_modulation(identity_dim, n_adain_layers, adain_dim)
 		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim, img_shape)
 
-		pose_encoder = cls.__build_pose_encoder(img_shape, pose_dim)
-		identity_encoder = cls.__build_identity_encoder(img_shape, identity_dim)
-
-		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator, pose_encoder, identity_encoder)
+		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
 
 	@classmethod
-	def load(cls, model_dir):
+	def load(cls, model_dir, include_encoders=False):
 		print('loading models...')
 
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
@@ -59,6 +56,9 @@ class Converter:
 		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
+
+		if not include_encoders:
+			return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
 
 		pose_encoder = load_model(os.path.join(model_dir, 'pose_encoder.h5py'), custom_objects={
 			'GaussianSampling': GaussianSampling
@@ -78,10 +78,18 @@ class Converter:
 		self.identity_embedding.save(os.path.join(model_dir, 'identity_embedding.h5py'))
 		self.identity_modulation.save(os.path.join(model_dir, 'identity_modulation.h5py'))
 		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
-		self.pose_encoder.save(os.path.join(model_dir, 'pose_encoder.h5py'))
-		self.identity_encoder.save(os.path.join(model_dir, 'identity_encoder.h5py'))
 
-	def __init__(self, config, pose_embedding, identity_embedding, identity_modulation, generator, pose_encoder, identity_encoder):
+		if self.pose_encoder:
+			self.pose_encoder.save(os.path.join(model_dir, 'pose_encoder.h5py'))
+
+		if self.identity_encoder:
+			self.identity_encoder.save(os.path.join(model_dir, 'identity_encoder.h5py'))
+
+	def __init__(self, config,
+				 pose_embedding, identity_embedding,
+				 identity_modulation, generator,
+				 pose_encoder=None, identity_encoder=None):
+
 		self.config = config
 
 		self.pose_embedding = pose_embedding
@@ -163,6 +171,9 @@ class Converter:
 					   batch_size, n_epochs,
 					   n_epochs_per_decay, n_epochs_per_checkpoint,
 					   model_dir, tensorboard_dir):
+
+		self.pose_encoder = self.__build_pose_encoder(self.config.img_shape, self.config.pose_dim)
+		self.identity_encoder = self.__build_identity_encoder(self.config.img_shape, self.config.identity_dim)
 
 		img_id = K.placeholder(shape=(batch_size, 1))
 		identity = K.placeholder(shape=(batch_size, 1))
