@@ -12,21 +12,21 @@ from keras.datasets import mnist
 
 
 supported_datasets = [
-	# 'mnist',
+	'mnist',
 	'smallnorb',
 	# 'dsprites',
 	# 'noisy-dsprites',
 	# 'color-dsprites',
 	# 'scream-dsprites',
 	'cars3d',
-	# 'shapes3d'
+	'shapes3d',
 	'celeba'
 ]
 
 
 def get_dataset(dataset_id, path=None):
-	# if dataset_id == 'mnist':
-	# 	return Mnist()
+	if dataset_id == 'mnist':
+		return Mnist()
 
 	if dataset_id == 'smallnorb':
 		return SmallNorb(path)
@@ -46,8 +46,8 @@ def get_dataset(dataset_id, path=None):
 	if dataset_id == 'cars3d':
 		return Cars3D(path)
 
-	# if dataset_id == 'shapes3d':
-	# 	return Shapes3D(path)
+	if dataset_id == 'shapes3d':
+		return Shapes3D(path)
 
 	if dataset_id == 'celeba':
 		return CelebA(path)
@@ -66,22 +66,24 @@ class DataSet(ABC):
 		pass
 
 
-# class Mnist(DataSet):
-#
-# 	def __init__(self):
-# 		super().__init__()
-#
-# 	def read_images(self):
-# 		(x_train, y_train), (x_test, y_test) = mnist.load_data()
-#
-# 		imgs = dict()
-#
-# 		for digit in range(10):
-# 			digit_imgs = x_train[y_train == digit]
-# 			digit_imgs = np.stack([cv2.resize(digit_imgs[i], dsize=(64, 64)) for i in range(digit_imgs.shape[0])], axis=0)
-# 			imgs[digit] = np.expand_dims(digit_imgs, axis=-1)
-#
-# 		return imgs
+class Mnist(DataSet):
+
+	def __init__(self):
+		super().__init__()
+
+	def read_images(self):
+		(x_train, y_train), (x_test, y_test) = mnist.load_data()
+
+		x = np.concatenate((x_train, x_test), axis=0)
+		y = np.concatenate((y_train, y_test), axis=0)
+
+		imgs = np.stack([cv2.resize(x[i], dsize=(64, 64)) for i in range(x.shape[0])], axis=0)
+		imgs = np.expand_dims(imgs, axis=-1)
+
+		identities = y
+		poses = np.empty(shape=(x.shape[0], ), dtype=np.uint32)
+
+		return imgs, identities, poses
 
 
 class SmallNorb(DataSet):
@@ -235,46 +237,47 @@ class Cars3D(DataSet):
 		return imgs, identities, poses
 
 
-# class Shapes3D(DataSet):
-#
-# 	def __init__(self, base_dir):
-# 		super().__init__(base_dir)
-#
-# 		self.__data_path = os.path.join(base_dir, '3dshapes.h5')
-#
-# 	def __img_index(self, floor_hue, wall_hue, object_hue, scale, shape, orientation):
-# 		return (
-# 			floor_hue * 10 * 10 * 8 * 4 * 15
-# 			+ wall_hue * 10 * 8 * 4 * 15
-# 			+ object_hue * 8 * 4 * 15
-# 			+ scale * 4 * 15
-# 			+ shape * 15
-# 			+ orientation
-# 		)
-#
-# 	def read_images(self):
-# 		with h5py.File(self.__data_path, 'r') as data:
-# 			data_imgs = data['images']
-#
-# 			img_idxs = dict()
-# 			for floor_hue in range(10):
-# 				for wall_hue in range(10):
-# 					for object_hue in range(10):
-# 						for scale in range(8):
-# 							for shape in range(4):
-# 								for orientation in range(15):
-# 									img_idx = self.__img_index(floor_hue, wall_hue, object_hue, scale, shape, orientation)
-#
-# 									if shape not in img_idxs:
-# 										img_idxs[shape] = list()
-#
-# 									img_idxs[shape].append(img_idx)
-#
-# 			imgs = dict()
-# 			for shape, shape_img_idxs in img_idxs.items():
-# 				imgs[shape] = data_imgs[shape_img_idxs]
-#
-# 			return imgs
+class Shapes3D(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__data_path = os.path.join(base_dir, '3dshapes.h5')
+
+	def __img_index(self, floor_hue, wall_hue, object_hue, scale, shape, orientation):
+		return (
+			floor_hue * 10 * 10 * 8 * 4 * 15
+			+ wall_hue * 10 * 8 * 4 * 15
+			+ object_hue * 8 * 4 * 15
+			+ scale * 4 * 15
+			+ shape * 15
+			+ orientation
+		)
+
+	def read_images(self):
+		with h5py.File(self.__data_path, 'r') as data:
+			imgs = data['images'][:]
+			identities = np.empty(shape=(imgs.shape[0],), dtype=np.uint32)
+			pose_ids = dict()
+
+			for floor_hue in range(10):
+				for wall_hue in range(10):
+					for object_hue in range(10):
+						for scale in range(8):
+							for shape in range(4):
+								for orientation in range(15):
+									img_idx = self.__img_index(floor_hue, wall_hue, object_hue, scale, shape, orientation)
+									pose_id = '_'.join((str(floor_hue), str(wall_hue), str(object_hue), str(scale), str(orientation)))
+
+									identities[img_idx] = shape
+									pose_ids[img_idx] = pose_id
+
+			unique_pose_ids = list(set(pose_ids.values()))
+			poses = np.empty(shape=(imgs.shape[0],), dtype=np.uint32)
+			for img_idx, pose_id in pose_ids.items():
+				poses[img_idx] = unique_pose_ids.index(pose_id)
+
+			return imgs, identities, poses
 
 
 class CelebA(DataSet):
