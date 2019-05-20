@@ -100,17 +100,19 @@ class SmallNorb(DataSet):
 		identity_ids = []
 		pose_ids = []
 
-		regex = re.compile('(\d+)_(\w+)_(\d+)_azimuth(\d+)_elevation(\d+)_lighting(\d+)_(\w+).jpg')
-		for file_name in os.listdir(self._base_dir):
-			img_path = os.path.join(self._base_dir, file_name)
-			img_id, category, instance, azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
+		regex = re.compile('azimuth(\d+)_elevation(\d+)_lighting(\d+)_(\w+).jpg')
+		for category in os.listdir(self._base_dir):
+			for instance in os.listdir(os.path.join(self._base_dir, category)):
+				for file_name in os.listdir(os.path.join(self._base_dir, category, instance)):
+					img_path = os.path.join(self._base_dir, category, instance, file_name)
+					azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
-			identity_id = '_'.join((category, instance, elevation, lighting, lt_rt))
-			pose_id = azimuth
+					identity_id = '_'.join((category, instance, elevation, lighting, lt_rt))
+					pose_id = azimuth
 
-			img_paths.append(img_path)
-			identity_ids.append(identity_id)
-			pose_ids.append(pose_id)
+					img_paths.append(img_path)
+					identity_ids.append(identity_id)
+					pose_ids.append(pose_id)
 
 		return img_paths, identity_ids, pose_ids
 
