@@ -20,7 +20,8 @@ supported_datasets = [
 	# 'scream-dsprites',
 	'cars3d',
 	'shapes3d',
-	'celeba'
+	'celeba',
+	'kth'
 ]
 
 
@@ -51,6 +52,9 @@ def get_dataset(dataset_id, path=None):
 
 	if dataset_id == 'celeba':
 		return CelebA(path)
+
+	if dataset_id == 'kth':
+		return KTH(path)
 
 	raise Exception('unsupported dataset: %s' % dataset_id)
 
@@ -326,6 +330,41 @@ class CelebA(DataSet):
 				img = cv2.resize(img, dsize=target_size)
 
 			imgs[i] = img
+			identities[i] = unique_identity_ids.index(identity_ids[i])
+
+		return imgs, identities, poses
+
+
+class KTH(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+		self.__action_dir = os.path.join(self._base_dir, 'handwaving')
+		self.__condition = 'd4'
+
+	def __list_imgs(self):
+		img_paths = []
+		identity_ids = []
+
+		for identity in os.listdir(self.__action_dir):
+			for f in os.listdir(os.path.join(self.__action_dir, identity, self.__condition)):
+				img_paths.append(os.path.join(self.__action_dir, identity, self.__condition, f))
+				identity_ids.append(identity)
+
+		return img_paths, identity_ids
+
+	def read_images(self):
+		img_paths, identity_ids = self.__list_imgs()
+
+		unique_identity_ids = list(set(identity_ids))
+
+		imgs = np.empty(shape=(len(img_paths), 64, 64, 1), dtype=np.uint8)
+		identities = np.empty(shape=(len(img_paths), ), dtype=np.uint32)
+		poses = np.zeros(shape=(len(img_paths), ), dtype=np.uint32)
+
+		for i in range(len(img_paths)):
+			imgs[i, :, :, 0] = cv2.cvtColor(cv2.imread(img_paths[i]), cv2.COLOR_BGR2GRAY)
 			identities[i] = unique_identity_ids.index(identity_ids[i])
 
 		return imgs, identities, poses
