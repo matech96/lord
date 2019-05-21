@@ -155,6 +155,24 @@ def test(args):
 	converter.test(imgs=imgs, prediction_dir=prediction_dir, n_samples=args.num_samples)
 
 
+def encode(args):
+	assets = AssetManager(args.base_dir)
+	model_dir = assets.get_model_dir(args.model_name)
+	prediction_dir = assets.create_prediction_dir(args.model_name)
+
+	data = np.load(assets.get_preprocess_file_path(args.data_name))
+	imgs, identities = data['imgs'], data['identities']
+	imgs = imgs.astype(np.float32) / 255.0
+
+	converter = Converter.load(model_dir, include_encoders=True)
+
+	pose_codes = converter.pose_encoder.predict(imgs)
+	identity_codes = converter.identity_encoder.predict(imgs)
+
+	np.savez(file=os.path.join(prediction_dir, 'pose.npz'), codes=pose_codes, identities=identities)
+	np.savez(file=os.path.join(prediction_dir, 'identity.npz'), codes=identity_codes, identities=identities)
+
+
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-bd', '--base-dir', type=str, required=True)
@@ -204,6 +222,12 @@ def main():
 	test_parser.add_argument('-ns', '--num-samples', type=int, default=10)
 	test_parser.add_argument('-g', '--gpus', type=int, default=1)
 	test_parser.set_defaults(func=test)
+
+	encode_parser = action_parsers.add_parser('encode')
+	encode_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	encode_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	encode_parser.add_argument('-g', '--gpus', type=int, default=1)
+	encode_parser.set_defaults(func=encode)
 
 	args = parser.parse_args()
 	args.func(args)
