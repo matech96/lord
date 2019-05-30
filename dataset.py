@@ -15,10 +15,6 @@ from scipy.ndimage.filters import gaussian_filter
 supported_datasets = [
 	'mnist',
 	'smallnorb',
-	# 'dsprites',
-	# 'noisy-dsprites',
-	# 'color-dsprites',
-	# 'scream-dsprites',
 	'cars3d',
 	'shapes3d',
 	'celeba',
@@ -33,18 +29,6 @@ def get_dataset(dataset_id, path=None):
 
 	if dataset_id == 'smallnorb':
 		return SmallNorb(path)
-
-	# if dataset_id == 'dsprites':
-	# 	return DSprites(path)
-	#
-	# if dataset_id == 'noisy-dsprites':
-	# 	return NoisyDSprites(path)
-	#
-	# if dataset_id == 'color-dsprites':
-	# 	return ColorDSprites(path)
-	#
-	# if dataset_id == 'scream-dsprites':
-	# 	return ScreamDSprites(path)
 
 	if dataset_id == 'cars3d':
 		return Cars3D(path)
@@ -139,90 +123,6 @@ class SmallNorb(DataSet):
 			poses[i] = unique_pose_ids.index(pose_ids[i])
 
 		return imgs, identities, poses
-
-
-# class DSprites(DataSet):
-#
-# 	def __init__(self, base_dir):
-# 		super().__init__(base_dir)
-#
-# 		self.__data_path = os.path.join(base_dir, 'dsprites_ndarray_co1sh3sc6or40x32y32_64x64.npz')
-#
-# 	def read_images(self):
-# 		data = np.load(self.__data_path)
-# 		data_imgs = data['imgs']
-# 		data_classes = data['latents_classes']
-#
-# 		imgs = dict()
-#
-# 		for shape in range(3):
-# 			imgs[str(shape)] = (data_imgs[data_classes[:, 1] == shape] * 255)[..., np.newaxis]
-#
-# 		return imgs
-#
-#
-# class NoisyDSprites(DSprites):
-#
-# 	def __init__(self, base_dir):
-# 		super().__init__(base_dir)
-#
-# 	def read_images(self):
-# 		imgs = super().read_images()
-#
-# 		for shape, shape_imgs in imgs.items():
-# 			noise = np.random.uniform(0, 1, size=(shape_imgs.shape[0], 64, 64, 3))
-# 			imgs[shape] = (np.minimum(shape_imgs / 255.0 + noise, 1.) * 255).astype(np.uint8)
-#
-# 		return imgs
-#
-#
-# class ColorDSprites(DSprites):
-#
-# 	def __init__(self, base_dir):
-# 		super().__init__(base_dir)
-#
-# 	def read_images(self):
-# 		imgs = super().read_images()
-#
-# 		for shape, shape_imgs in imgs.items():
-# 			color = np.random.uniform(0.5, 1, size=(shape_imgs.shape[0], 1, 1, 3))
-# 			color = np.tile(color, reps=(1, 64, 64, 1))
-#
-# 			imgs[shape] = (shape_imgs * color).astype(np.uint8)
-#
-# 		return imgs
-#
-#
-# class ScreamDSprites(DSprites):
-#
-# 	def __init__(self, base_dir):
-# 		super().__init__(base_dir)
-#
-# 		self.__scream_path = os.path.join(base_dir, 'scream.jpg')
-#
-# 		scream_img = PIL.Image.open(self.__scream_path)
-# 		scream_img.thumbnail((350, 274, 3))
-#
-# 		self.__scream_img = np.array(scream_img) / 255.0
-#
-# 	def __apply_background(self, img):
-# 		x_crop = np.random.randint(0, self.__scream_img.shape[0] - 64)
-# 		y_crop = np.random.randint(0, self.__scream_img.shape[1] - 64)
-#
-# 		background = (self.__scream_img[x_crop:x_crop + 64, y_crop:y_crop + 64] + np.random.uniform(0, 1, size=3)) / 2
-#
-# 		mask = (img == 255).squeeze()
-# 		background[mask] = 1 - background[mask]
-#
-# 		return (background * 255).astype(np.uint8)
-#
-# 	def read_images(self):
-# 		imgs = super().read_images()
-#
-# 		for shape, shape_imgs in imgs.items():
-# 			imgs[shape] = np.stack([self.__apply_background(shape_imgs[i]) for i in range(shape_imgs.shape[0])], axis=0)
-#
-# 		return imgs
 
 
 class Cars3D(DataSet):
