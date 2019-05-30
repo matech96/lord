@@ -2,7 +2,7 @@
 Implementation of the method described in the paper: [Latent Optimization for Non-adversarial Representation Disentanglement](http://www.vision.huji.ac.il/lord) by Aviv Gabbay and Yedid Hoshen.
 
 ## Pose transfer between identities
-| Cars3d | KTH |
+| Cars3D | KTH |
 | :---: | :---: |
 | ![image](http://www.vision.huji.ac.il/lord/img/cars3d/ours.png) | ![image](http://www.vision.huji.ac.il/lord/img/kth/ours.png) |
 
@@ -35,7 +35,7 @@ lord.py preprocess --base-dir <output-root-dir>
     --data-name <output-data-filename>
 ```
 
-Splitting a preprocessed dataset into train and test sets can be done using one of the following configurations:
+Splitting a preprocessed dataset into train and test sets can be done according to one of two configurations:
 ```
 lord.py split-identities --base-dir <output-root-dir>
     --input-data-name <input-data-filename>
@@ -52,8 +52,8 @@ lord.py split-samples --base-dir <output-root-dir>
     --test-split <ratio-of-random-test-samples>
 ```
 
-### Training a model
-Given a preprocessed dataset, training a GLO based model (first stage) can be done as follows:
+#### Training a model
+Given a preprocessed train set, training a GLO based model (first stage) can be done as follows:
 ```
 lord.py train --base-dir <output-root-dir>
     --data-name <input-preprocessed-data-filename>
@@ -69,7 +69,7 @@ lord.py train-encoders --base-dir <output-root-dir>
     --model-name <input-model-name>
 ```
 
-### Testing a model
+#### Testing a model
 A trained model can be tested similarly:
 ```
 lord.py test --base-dir <output-root-dir>
