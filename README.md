@@ -29,7 +29,7 @@ Training a model for disentanglement requires several steps.
 #### Preprocessing an image dataset
 Preprocessing a local copy of one of the supported datasets can be done as follows:
 ```
-lord.py preprocess --base-dir <output-root-dir>
+lord.py --base-dir <output-root-dir> preprocess
     --dataset-id {mnist,smallnorb,cars3d,shapes3d,celeba,kth,edges2shoes}
     --dataset-path <input-dataset-path>
     --data-name <output-data-filename>
@@ -37,7 +37,7 @@ lord.py preprocess --base-dir <output-root-dir>
 
 Splitting a preprocessed dataset into train and test sets can be done according to one of two configurations:
 ```
-lord.py split-identities --base-dir <output-root-dir>
+lord.py --base-dir <output-root-dir> split-identities
     --input-data-name <input-data-filename>
     --train-data-name <output-train-data-filename>
     --test-data-name <output-test-data-filename>
@@ -45,7 +45,7 @@ lord.py split-identities --base-dir <output-root-dir>
 ```
 
 ```
-lord.py split-samples --base-dir <output-root-dir>
+lord.py --base-dir <output-root-dir> split-samples
     --input-data-name <input-data-filename>
     --train-data-name <output-train-data-filename>
     --test-data-name <output-test-data-filename>
@@ -55,7 +55,7 @@ lord.py split-samples --base-dir <output-root-dir>
 #### Training a model
 Given a preprocessed train set, training a GLO based model (first stage) can be done as follows:
 ```
-lord.py train --base-dir <output-root-dir>
+lord.py --base-dir <output-root-dir> train
     --data-name <input-preprocessed-data-filename>
     --model-name <output-model-name>
     --pose-dim <pose-code-size>
@@ -64,7 +64,7 @@ lord.py train --base-dir <output-root-dir>
 
 The second stage should be trained afterwards as follows:
 ```
-lord.py train-encoders --base-dir <output-root-dir>
+lord.py --base-dir <output-root-dir> train-encoders
     --data-name <input-preprocessed-data-filename>
     --model-name <input-model-name>
 ```
@@ -72,7 +72,7 @@ lord.py train-encoders --base-dir <output-root-dir>
 #### Testing a model
 A trained model can be tested similarly:
 ```
-lord.py test --base-dir <output-root-dir>
+lord.py --base-dir <output-root-dir> test
     --data-name <input-preprocessed-data-filename>
     --model-name <input-model-name>
     --num-samples <number-of-random-samples-for-pose-transfer>
