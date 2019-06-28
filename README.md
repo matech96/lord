@@ -84,7 +84,7 @@ If you find this project useful for your research, please cite
 @article{gabbay2019lord,
   author    = {Aviv Gabbay and Yedid Hoshen},
   title     = {Latent Optimization for Non-adversarial Representation Disentanglement},
-  journal   = {arXiv preprint},
+  journal   = {arXiv preprint arXiv:1906.11796},
   year      = {2019}
 }
 ```
