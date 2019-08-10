@@ -6,11 +6,13 @@ import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras import optimizers
-from keras.layers import Conv2D, Dense, UpSampling2D, BatchNormalization, LeakyReLU, Activation, GlobalAveragePooling2D
-from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding
+from keras import optimizers, losses
+from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation, GlobalAveragePooling2D
+from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding, GaussianNoise
 from keras.models import Model, load_model
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping, Callback
 from keras.applications import vgg16
+from keras_lr_multiplier import LRMultiplier
 
 from model.evaluation import TrainEvaluationCallback, TrainEncodersEvaluationCallback
 
@@ -19,20 +21,24 @@ class Converter:
 
 	class Config:
 
-		def __init__(self, img_shape, n_imgs, n_identities, pose_dim, identity_dim, n_adain_layers, adain_dim):
+		def __init__(self, img_shape, n_imgs, n_identities, pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim):
 			self.img_shape = img_shape
+
 			self.n_imgs = n_imgs
 			self.n_identities = n_identities
+
 			self.pose_dim = pose_dim
 			self.identity_dim = identity_dim
+
+			self.pose_std = pose_std
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
 
 	@classmethod
-	def build(cls, img_shape, n_imgs, n_identities, pose_dim, identity_dim, n_adain_layers, adain_dim):
-		config = Converter.Config(img_shape, n_imgs, n_identities, pose_dim, identity_dim, n_adain_layers, adain_dim)
+	def build(cls, img_shape, n_imgs, n_identities, pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim):
+		config = Converter.Config(img_shape, n_imgs, n_identities, pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim)
 
-		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim)
+		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim, pose_std)
 		identity_embedding = cls.__build_identity_embedding(n_identities, identity_dim)
 		identity_modulation = cls.__build_identity_modulation(identity_dim, n_adain_layers, adain_dim)
 		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim, img_shape)
@@ -46,10 +52,7 @@ class Converter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
 			config = pickle.load(config_fd)
 
-		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'), custom_objects={
-			'GaussianSampling': GaussianSampling
-		})
-
+		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'))
 		identity_embedding = load_model(os.path.join(model_dir, 'identity_embedding.h5py'))
 		identity_modulation = load_model(os.path.join(model_dir, 'identity_modulation.h5py'))
 
@@ -60,10 +63,7 @@ class Converter:
 		if not include_encoders:
 			return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
 
-		pose_encoder = load_model(os.path.join(model_dir, 'pose_encoder.h5py'), custom_objects={
-			'GaussianSampling': GaussianSampling
-		})
-
+		pose_encoder = load_model(os.path.join(model_dir, 'pose_encoder.h5py'))
 		identity_encoder = load_model(os.path.join(model_dir, 'identity_encoder.h5py'))
 
 		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator, pose_encoder, identity_encoder)
@@ -101,137 +101,87 @@ class Converter:
 
 		self.vgg = self.__build_vgg()
 
-	def train(self, imgs, identities,
-			  batch_size, n_epochs,
-			  n_epochs_per_decay, n_epochs_per_checkpoint,
-			  model_dir, tensorboard_dir):
-
-		img_id = K.placeholder(shape=(batch_size, 1))
-		identity = K.placeholder(shape=(batch_size, 1))
-		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
+	def train(self, imgs, identities, batch_size, n_epochs, model_dir, tensorboard_dir):
+		img_id = Input(shape=(1, ))
+		identity = Input(shape=(1, ))
 
 		pose_code = self.pose_embedding(img_id)
 		identity_code = self.identity_embedding(identity)
 		identity_adain_params = self.identity_modulation(identity_code)
 		generated_img = self.generator([pose_code, identity_adain_params])
-
-		target_perceptual_codes = self.vgg(target_img)
 		generated_perceptual_codes = self.vgg(generated_img)
 
-		loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
+		self.vgg.trainable = False
+		model = Model(inputs=[img_id, identity], outputs=generated_perceptual_codes)
 
-		pose_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
-		identity_optimizer = optimizers.Adam(lr=1e-3, beta_1=0.5, beta_2=0.999)
-		identity_modulation_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
-		generator_optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
+		model.compile(
+			optimizer=LRMultiplier(
+				optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+				multipliers={
+					'pose-embedding': 10,
+					'identity-embedding': 10
+				}
+			),
 
-		train_function = K.function(
-			inputs=[img_id, identity, target_img], outputs=[loss],
-			updates=(
-				pose_optimizer.get_updates(loss, self.pose_embedding.trainable_weights)
-				+ identity_optimizer.get_updates(loss, self.identity_embedding.trainable_weights)
-				+ identity_modulation_optimizer.get_updates(loss, self.identity_modulation.trainable_weights)
-				+ generator_optimizer.get_updates(loss, self.generator.trainable_weights)
-			)
+			loss=losses.mean_absolute_error
 		)
 
-		evaluation_callback = TrainEvaluationCallback(imgs, identities,
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=5, verbose=1)
+		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=10, verbose=1)
+
+		tensorboard = TrainEvaluationCallback(
+			imgs, identities,
 			self.pose_embedding, self.identity_embedding,
 			self.identity_modulation, self.generator,
 			tensorboard_dir
 		)
 
-		n_samples = imgs.shape[0]
-		for e in range(1, n_epochs + 1):
-			epoch_idx = np.random.permutation(n_samples)
-			for i in np.arange(start=0, stop=(n_samples - batch_size + 1), step=batch_size):
-				batch_idx = epoch_idx[i:(i + batch_size)]
-				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
+		checkpoint = CustomModelCheckpoint(self, model_dir)
 
-			evaluation_callback.on_epoch_end(epoch=e, logs={
-				'loss': loss_val[0],
-				'pose_lr': K.get_value(pose_optimizer.lr),
-				'identity_lr': K.get_value(identity_optimizer.lr),
-				'identity_modulation_lr': K.get_value(identity_modulation_optimizer.lr),
-				'generator_lr': K.get_value(generator_optimizer.lr)
-			})
+		model.fit(
+			x=[np.arange(imgs.shape[0]), identities],
+			y=self.vgg.predict(imgs),
+			batch_size=batch_size, epochs=n_epochs,
+			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
+			verbose=1
+		)
 
-			if e % n_epochs_per_decay == 0:
-				K.set_value(pose_optimizer.lr, K.get_value(pose_optimizer.lr) * 0.5)
-				K.set_value(identity_optimizer.lr, K.get_value(identity_optimizer.lr) * 0.5)
-				K.set_value(identity_modulation_optimizer.lr, K.get_value(identity_modulation_optimizer.lr) * 0.5)
-				K.set_value(generator_optimizer.lr, K.get_value(generator_optimizer.lr) * 0.5)
-
-			if e % n_epochs_per_checkpoint == 0:
-				self.save(model_dir)
-
-		evaluation_callback.on_train_end(None)
-
-	def train_encoders(self, imgs, identities, embeddings_weight,
-					   batch_size, n_epochs,
-					   n_epochs_per_decay, n_epochs_per_checkpoint,
-					   model_dir, tensorboard_dir):
-
+	def train_encoders(self, imgs, identities, batch_size, n_epochs, model_dir, tensorboard_dir):
 		self.pose_encoder = self.__build_pose_encoder(self.config.img_shape, self.config.pose_dim)
 		self.identity_encoder = self.__build_identity_encoder(self.config.img_shape, self.config.identity_dim)
 
-		img_id = K.placeholder(shape=(batch_size, 1))
-		identity = K.placeholder(shape=(batch_size, 1))
-		target_img = K.placeholder(shape=(batch_size, *self.config.img_shape))
+		img = Input(shape=self.config.img_shape)
 
-		pose_code = self.pose_encoder(target_img)
-		identity_code = self.identity_encoder(target_img)
-		identity_adain_params = self.identity_modulation(identity_code)
-		generated_img = self.generator([pose_code, identity_adain_params])
+		pose_code = self.pose_encoder(img)
+		identity_code = self.identity_encoder(img)
 
-		target_perceptual_codes = self.vgg(target_img)
-		generated_perceptual_codes = self.vgg(generated_img)
-
-		pose_loss = K.mean(K.abs(pose_code - self.pose_embedding(img_id)))
-		identity_loss = K.mean(K.abs(identity_code - self.identity_embedding(identity)))
-		reconstruction_loss = K.mean(K.abs(generated_perceptual_codes - target_perceptual_codes))
-
-		loss = reconstruction_loss + embeddings_weight * pose_loss + embeddings_weight * identity_loss
-
-		optimizer = optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999)
-		trainable_weights = (
-			self.pose_encoder.trainable_weights + self.identity_encoder.trainable_weights
-			+ self.identity_modulation.trainable_weights + self.generator.trainable_weights
+		model = Model(inputs=img, outputs=[pose_code, identity_code])
+		model.compile(
+			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+			loss=[losses.mean_squared_error, losses.mean_squared_error]
 		)
 
-		train_function = K.function(
-			inputs=[img_id, identity, target_img], outputs=[loss, pose_loss, identity_loss, reconstruction_loss],
-			updates=(optimizer.get_updates(loss, trainable_weights))
-		)
-
-		evaluation_callback = TrainEncodersEvaluationCallback(imgs,
+		tensorboard = TrainEncodersEvaluationCallback(imgs,
 			self.pose_encoder, self.identity_encoder,
 			self.identity_modulation, self.generator,
 			tensorboard_dir
 		)
 
-		n_samples = imgs.shape[0]
-		for e in range(1, n_epochs + 1):
-			epoch_idx = np.random.permutation(n_samples)
-			for i in np.arange(start=0, stop=(n_samples - batch_size + 1), step=batch_size):
-				batch_idx = epoch_idx[i:(i + batch_size)]
-				loss_val = train_function([batch_idx, identities[batch_idx], imgs[batch_idx]])
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=0.1, factor=0.5, patience=5, verbose=1)
+		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=0.1, patience=10, verbose=1)
 
-			evaluation_callback.on_epoch_end(epoch=e, logs={
-				'loss-with-encoders': loss_val[0],
-				'pose-loss-with-encoders': loss_val[1],
-				'identity-loss-with-encoders': loss_val[2],
-				'reconstruction-loss-with-encoders': loss_val[3],
-				'lr-with-encoders': K.get_value(optimizer.lr)
-			})
+		checkpoint = CustomModelCheckpoint(self, model_dir)
 
-			if e % n_epochs_per_decay == 0:
-				K.set_value(optimizer.lr, K.get_value(optimizer.lr) * 0.5)
-
-			if e % n_epochs_per_checkpoint == 0:
-				self.save(model_dir)
-
-		evaluation_callback.on_train_end(None)
+		model.fit(
+			x=imgs,
+			y=[
+				self.pose_embedding.predict(np.arange(imgs.shape[0])),
+				self.identity_embedding.predict(identities)
+			],
+			batch_size=batch_size, epochs=n_epochs,
+			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
+			verbose=1
+		)
 
 	def test(self, imgs, prediction_dir, n_samples):
 		img_idxs = np.random.choice(imgs.shape[0], size=n_samples, replace=False)
@@ -254,18 +204,15 @@ class Converter:
 		imageio.imwrite(os.path.join(prediction_dir, 'summary.png'), (summary_img * 255).astype(np.uint8))
 
 	@classmethod
-	def __build_pose_embedding(cls, n_imgs, pose_dim):
+	def __build_pose_embedding(cls, n_imgs, pose_dim, pose_std):
 		img_id = Input(shape=(1, ))
 
-		pose_embedding_mean = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
-		pose_embedding_mean = Reshape(target_shape=(pose_dim, ))(pose_embedding_mean)
+		pose_embedding = Embedding(input_dim=n_imgs, output_dim=pose_dim, name='pose-embedding')(img_id)
+		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
 
-		pose_embedding_log_var = Embedding(input_dim=n_imgs, output_dim=pose_dim)(img_id)
-		pose_embedding_log_var = Reshape(target_shape=(pose_dim, ))(pose_embedding_log_var)
+		pose_embedding = GaussianNoise(stddev=pose_std)(pose_embedding)
 
-		pose_embedding = GaussianSampling()([pose_embedding_mean, pose_embedding_log_var])
-
-		model = Model(inputs=img_id, outputs=pose_embedding, name='pose-embedding')
+		model = Model(inputs=img_id, outputs=pose_embedding)
 
 		print('pose embedding:')
 		model.summary()
@@ -276,10 +223,10 @@ class Converter:
 	def __build_identity_embedding(cls, n_identities, identity_dim):
 		identity = Input(shape=(1, ))
 
-		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim)(identity)
+		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim, name='identity-embedding')(identity)
 		identity_embedding = Reshape(target_shape=(identity_dim, ))(identity_embedding)
 
-		model = Model(inputs=identity, outputs=identity_embedding, name='identity-embedding')
+		model = Model(inputs=identity, outputs=identity_embedding)
 
 		print('identity embedding:')
 		model.summary()
@@ -310,15 +257,12 @@ class Converter:
 		initial_width = img_shape[1] // (2 ** n_adain_layers)
 
 		x = Dense(units=initial_height * initial_width * (adain_dim // 8))(pose_code)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Dense(units=initial_height * initial_width * (adain_dim // 4))(x)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Dense(units=initial_height * initial_width * adain_dim)(x)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Reshape(target_shape=(initial_height, initial_width, adain_dim))(x)
@@ -364,36 +308,27 @@ class Converter:
 		img = Input(shape=img_shape)
 
 		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = BatchNormalization()(x)
 		x = LeakyReLU()(x)
 
 		x = Flatten()(x)
 
 		for i in range(2):
 			x = Dense(units=256)(x)
-			x = BatchNormalization()(x)
 			x = LeakyReLU()(x)
 
-		pose_code_mean = Dense(units=pose_dim)(x)
-		pose_code_log_var = Dense(units=pose_dim)(x)
-
-		pose_code = GaussianSampling()([pose_code_mean, pose_code_log_var])
+		pose_code = Dense(units=pose_dim)(x)
 
 		model = Model(inputs=img, outputs=pose_code, name='pose-encoder')
 
@@ -482,16 +417,12 @@ class VggNormalization(Layer):
 		return vgg16.preprocess_input(x)
 
 
-class GaussianSampling(Layer):
+class CustomModelCheckpoint(Callback):
 
-	def __init__(self, **kwargs):
-		super().__init__(**kwargs)
+	def __init__(self, model, path):
+		super().__init__()
+		self.__model = model
+		self.__path = path
 
-	def call(self, inputs, **kwargs):
-		z_mean, z_log_var = inputs
-
-		batch = K.shape(z_mean)[0]
-		dim = K.int_shape(z_mean)[1]
-
-		z_standard = K.random_normal(shape=(batch, dim))
-		return z_mean + K.exp(0.5 * z_log_var) * z_standard
+	def on_epoch_end(self, epoch, logs=None):
+		self.__model.save(self.__path)

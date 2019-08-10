@@ -87,6 +87,7 @@ def train(args):
 		pose_dim=args.pose_dim,
 		identity_dim=args.identity_dim,
 
+		pose_std=default_config['pose_std'],
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim']
 	)
@@ -97,9 +98,6 @@ def train(args):
 
 		batch_size=default_config['train']['batch_size'],
 		n_epochs=default_config['train']['n_epochs'],
-
-		n_epochs_per_decay=default_config['train']['n_epochs_per_decay'],
-		n_epochs_per_checkpoint=default_config['train']['n_epochs_per_checkpoint'],
 
 		model_dir=model_dir,
 		tensorboard_dir=tensorboard_dir
@@ -127,13 +125,9 @@ def train_encoders(args):
 	converter.train_encoders(
 		imgs=imgs,
 		identities=identities,
-		embeddings_weight=args.embeddings_weight,
 
 		batch_size=default_config['train_encoders']['batch_size'],
 		n_epochs=default_config['train_encoders']['n_epochs'],
-
-		n_epochs_per_decay=default_config['train_encoders']['n_epochs_per_decay'],
-		n_epochs_per_checkpoint=default_config['train_encoders']['n_epochs_per_checkpoint'],
 
 		model_dir=model_dir,
 		tensorboard_dir=tensorboard_dir
@@ -211,7 +205,6 @@ def main():
 	train_encoders_parser = action_parsers.add_parser('train-encoders')
 	train_encoders_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_encoders_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	train_encoders_parser.add_argument('-ew', '--embeddings-weight', type=float, default=1e3)
 	train_encoders_parser.add_argument('-gd', '--glo-dir', type=str, default='glo')
 	train_encoders_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_encoders_parser.set_defaults(func=train_encoders)

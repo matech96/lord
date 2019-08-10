@@ -1,18 +1,15 @@
 default_config = dict(
+	pose_std=1,
 	n_adain_layers=4,
 	adain_dim=256,
 
 	train=dict(
 		batch_size=64,
-		n_epochs=100000,
-		n_epochs_per_decay=200,
-		n_epochs_per_checkpoint=10
+		n_epochs=10000
 	),
 
 	train_encoders=dict(
 		batch_size=64,
-		n_epochs=500,
-		n_epochs_per_decay=50,
-		n_epochs_per_checkpoint=5
+		n_epochs=500
 	)
 )

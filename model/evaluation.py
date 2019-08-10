@@ -38,7 +38,7 @@ class TrainEvaluationCallback(TensorBoard):
 		output = [np.concatenate([blank] + list(imgs), axis=1)]
 		for i in range(self.__n_samples_per_evaluation):
 			converted_imgs = [imgs[i]] + [
-				self.model.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
+				self.__generator.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
 				for j in range(self.__n_samples_per_evaluation)
 			]
 
@@ -80,7 +80,7 @@ class TrainEncodersEvaluationCallback(TensorBoard):
 		output = [np.concatenate([blank] + list(imgs), axis=1)]
 		for i in range(self.__n_samples_per_evaluation):
 			converted_imgs = [imgs[i]] + [
-				self.model.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
+				self.__generator.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
 				for j in range(self.__n_samples_per_evaluation)
 			]
 
