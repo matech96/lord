@@ -8,7 +8,7 @@ import tensorflow as tf
 from keras import backend as K
 from keras import optimizers, losses
 from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation, GlobalAveragePooling2D
-from keras.layers import Layer, Input, Reshape, Flatten, Concatenate, Embedding, GaussianNoise
+from keras.layers import Layer, Input, Reshape, Lambda, Flatten, Concatenate, Embedding, GaussianNoise
 from keras.models import Model, load_model
 from keras.callbacks import ReduceLROnPlateau, EarlyStopping, Callback
 from keras.applications import vgg16
@@ -21,7 +21,10 @@ class Converter:
 
 	class Config:
 
-		def __init__(self, img_shape, n_imgs, n_identities, pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim):
+		def __init__(self, img_shape, n_imgs, n_identities,
+					 pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim,
+					 perceptual_loss_layers, perceptual_loss_weights):
+
 			self.img_shape = img_shape
 
 			self.n_imgs = n_imgs
@@ -34,9 +37,19 @@ class Converter:
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
 
+			self.perceptual_loss_layers = perceptual_loss_layers
+			self.perceptual_loss_weights = perceptual_loss_weights
+
 	@classmethod
-	def build(cls, img_shape, n_imgs, n_identities, pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim):
-		config = Converter.Config(img_shape, n_imgs, n_identities, pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim)
+	def build(cls, img_shape, n_imgs, n_identities,
+			  pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim,
+			  perceptual_loss_layers, perceptual_loss_weights):
+
+		config = Converter.Config(
+			img_shape, n_imgs, n_identities,
+			pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim,
+			perceptual_loss_layers, perceptual_loss_weights
+		)
 
 		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim, pose_std)
 		identity_embedding = cls.__build_identity_embedding(n_identities, identity_dim)
@@ -109,10 +122,8 @@ class Converter:
 		identity_code = self.identity_embedding(identity)
 		identity_adain_params = self.identity_modulation(identity_code)
 		generated_img = self.generator([pose_code, identity_adain_params])
-		generated_perceptual_codes = self.vgg(generated_img)
 
-		self.vgg.trainable = False
-		model = Model(inputs=[img_id, identity], outputs=generated_perceptual_codes)
+		model = Model(inputs=[img_id, identity], outputs=generated_img)
 
 		model.compile(
 			optimizer=LRMultiplier(
@@ -123,7 +134,7 @@ class Converter:
 				}
 			),
 
-			loss=losses.mean_absolute_error
+			loss=self.__perceptual_loss
 		)
 
 		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=5, verbose=1)
@@ -139,8 +150,7 @@ class Converter:
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
-			x=[np.arange(imgs.shape[0]), identities],
-			y=self.vgg.predict(imgs),
+			x=[np.arange(imgs.shape[0]), identities], y=imgs,
 			batch_size=batch_size, epochs=n_epochs,
 			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
 			verbose=1
@@ -202,6 +212,18 @@ class Converter:
 
 		summary_img = np.concatenate(summary, axis=0)
 		imageio.imwrite(os.path.join(prediction_dir, 'summary.png'), (summary_img * 255).astype(np.uint8))
+
+	def __perceptual_loss(self, y_true, y_pred):
+		perceptual_codes_pred = self.vgg(y_pred)
+		perceptual_codes_true = self.vgg(y_true)
+
+		normalized_weights = self.config.perceptual_loss_weights / np.sum(self.config.perceptual_loss_weights)
+		loss = 0
+
+		for i, (p, t) in enumerate(zip(perceptual_codes_pred, perceptual_codes_true)):
+			loss += normalized_weights[i] * K.mean(K.abs(p - t))
+
+		return loss
 
 	@classmethod
 	def __build_pose_embedding(cls, n_imgs, pose_dim, pose_std):
@@ -290,13 +312,20 @@ class Converter:
 	def __build_vgg(self):
 		vgg = vgg16.VGG16(include_top=False, input_shape=(self.config.img_shape[0], self.config.img_shape[1], 3))
 
-		layer_ids = [2, 5, 8, 13, 18]
-		layer_outputs = [Flatten()(vgg.layers[layer_id].output) for layer_id in layer_ids]
-
-		base_model = Model(inputs=vgg.inputs, outputs=Concatenate(axis=-1)(layer_outputs))
+		layer_outputs = [vgg.layers[layer_id].output for layer_id in self.config.perceptual_loss_layers]
+		feature_extractor = Model(inputs=vgg.inputs, outputs=layer_outputs)
 
 		img = Input(shape=self.config.img_shape)
-		model = Model(inputs=img, outputs=base_model(VggNormalization()(img)), name='vgg')
+
+		if self.config.img_shape[-1] == 1:
+			x = Lambda(lambda t: tf.tile(t, multiples=(1, 1, 1, 3)))(img)
+		else:
+			x = img
+
+		x = VggNormalization()(x)
+		features = feature_extractor(x)
+
+		model = Model(inputs=img, outputs=features, name='vgg')
 
 		print('vgg arch:')
 		model.summary()
@@ -410,10 +439,6 @@ class VggNormalization(Layer):
 
 	def call(self, inputs, **kwargs):
 		x = inputs * 255
-
-		if x.shape[-1] == 1:
-			x = tf.tile(x, (1, 1, 1, 3))
-
 		return vgg16.preprocess_input(x)
 
 

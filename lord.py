@@ -89,7 +89,10 @@ def train(args):
 
 		pose_std=default_config['pose_std'],
 		n_adain_layers=default_config['n_adain_layers'],
-		adain_dim=default_config['adain_dim']
+		adain_dim=default_config['adain_dim'],
+
+		perceptual_loss_layers=default_config['perceptual_loss']['layers'],
+		perceptual_loss_weights=default_config['perceptual_loss']['weights']
 	)
 
 	converter.train(
