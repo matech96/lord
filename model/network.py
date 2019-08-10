@@ -116,7 +116,7 @@ class Converter:
 
 		model.compile(
 			optimizer=LRMultiplier(
-				optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+				optimizer=optimizers.Adam(lr=3e-4, beta_1=0.5, beta_2=0.999),
 				multipliers={
 					'pose-embedding': 10,
 					'identity-embedding': 10
@@ -157,7 +157,7 @@ class Converter:
 
 		model = Model(inputs=img, outputs=[pose_code, identity_code])
 		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+			optimizer=optimizers.Adam(lr=5e-4, beta_1=0.5, beta_2=0.999),
 			loss=[losses.mean_squared_error, losses.mean_squared_error]
 		)
 
