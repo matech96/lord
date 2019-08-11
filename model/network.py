@@ -127,7 +127,7 @@ class Converter:
 
 		model.compile(
 			optimizer=LRMultiplier(
-				optimizer=optimizers.Adam(lr=3e-4, beta_1=0.5, beta_2=0.999),
+				optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
 				multipliers={
 					'pose-embedding': 10,
 					'identity-embedding': 10
@@ -167,7 +167,7 @@ class Converter:
 
 		model = Model(inputs=img, outputs=[pose_code, identity_code])
 		model.compile(
-			optimizer=optimizers.Adam(lr=5e-4, beta_1=0.5, beta_2=0.999),
+			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
 			loss=[losses.mean_squared_error, losses.mean_squared_error]
 		)
 
@@ -177,17 +177,14 @@ class Converter:
 			tensorboard_dir
 		)
 
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=0.1, factor=0.5, patience=5, verbose=1)
-		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=0.1, patience=10, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='val_loss', mode='min', min_delta=0.01, factor=0.5, patience=5, verbose=1)
+		early_stopping = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.01, patience=10, verbose=1)
 
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
-			x=imgs,
-			y=[
-				self.pose_embedding.predict(np.arange(imgs.shape[0])),
-				self.identity_embedding.predict(identities)
-			],
+			x=imgs, y=[self.pose_embedding.predict(np.arange(imgs.shape[0])), self.identity_embedding.predict(identities)],
+			validation_split=0.1,
 			batch_size=batch_size, epochs=n_epochs,
 			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
 			verbose=1
@@ -385,7 +382,7 @@ class Converter:
 		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
 		x = LeakyReLU()(x)
 
-		x = GlobalAveragePooling2D()(x)
+		x = Flatten()(x)
 
 		for i in range(2):
 			x = Dense(units=256)(x)
