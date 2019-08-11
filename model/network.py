@@ -137,8 +137,8 @@ class Converter:
 			loss=self.__perceptual_loss
 		)
 
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=5, verbose=1)
-		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=10, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=10, verbose=1)
+		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=20, verbose=1)
 
 		tensorboard = TrainEvaluationCallback(
 			imgs, identities,
