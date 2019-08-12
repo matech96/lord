@@ -67,6 +67,9 @@ class TrainEncodersEvaluationCallback(TensorBoard):
 		self.__n_samples_per_evaluation = 10
 
 	def on_epoch_end(self, epoch, logs={}):
+		for k in logs.keys():
+			logs['encoders_%s' % k] = logs.pop(k)
+
 		super().on_epoch_end(epoch, logs)
 
 		img_ids = np.random.choice(self.__imgs.shape[0], size=self.__n_samples_per_evaluation, replace=False)

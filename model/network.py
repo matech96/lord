@@ -168,7 +168,8 @@ class Converter:
 		model = Model(inputs=img, outputs=[pose_code, identity_code])
 		model.compile(
 			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
-			loss=[losses.mean_squared_error, losses.mean_squared_error]
+			loss=[losses.mean_squared_error, losses.mean_squared_error],
+			loss_weights=[1, 10]
 		)
 
 		tensorboard = TrainEncodersEvaluationCallback(imgs,
@@ -177,8 +178,8 @@ class Converter:
 			tensorboard_dir
 		)
 
-		reduce_lr = ReduceLROnPlateau(monitor='val_loss', mode='min', min_delta=0.01, factor=0.5, patience=5, verbose=1)
-		early_stopping = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.01, patience=10, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='val_loss', mode='min', min_delta=0.005, factor=0.5, patience=10, verbose=1)
+		early_stopping = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.005, patience=20, verbose=1)
 
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
