@@ -15,6 +15,6 @@ default_config = dict(
 
 	train_encoders=dict(
 		batch_size=64,
-		n_epochs=500
+		n_epochs=200
 	)
 )

@@ -7,14 +7,14 @@ import tensorflow as tf
 
 from keras import backend as K
 from keras import optimizers, losses
-from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation, GlobalAveragePooling2D
+from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Lambda, Flatten, Concatenate, Embedding, GaussianNoise
 from keras.models import Model, load_model
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping, Callback
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping, ModelCheckpoint, Callback
 from keras.applications import vgg16
 from keras_lr_multiplier import LRMultiplier
 
-from model.evaluation import TrainEvaluationCallback, TrainEncodersEvaluationCallback
+from model.evaluation import EvaluationCallback
 
 
 class Converter:
@@ -140,7 +140,7 @@ class Converter:
 		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=10, verbose=1)
 		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=20, verbose=1)
 
-		tensorboard = TrainEvaluationCallback(
+		tensorboard = EvaluationCallback(
 			imgs, identities,
 			self.pose_embedding, self.identity_embedding,
 			self.identity_modulation, self.generator,
@@ -156,38 +156,55 @@ class Converter:
 			verbose=1
 		)
 
-	def train_encoders(self, imgs, identities, batch_size, n_epochs, model_dir, tensorboard_dir):
+	def train_pose_encoder(self, imgs, batch_size, n_epochs, model_dir):
 		self.pose_encoder = self.__build_pose_encoder(self.config.img_shape, self.config.pose_dim)
+
+		img = Input(shape=self.config.img_shape)
+		pose_code = self.pose_encoder(img)
+
+		model = Model(inputs=img, outputs=pose_code)
+		model.compile(
+			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+			loss=losses.mean_squared_error
+		)
+
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1e-3, factor=0.5, patience=50, verbose=1)
+
+		checkpoint = ModelCheckpoint(
+			filepath=os.path.join(model_dir, 'pose_encoder.h5py'),
+			monitor='loss', save_best_only=True, verbose=1
+		)
+
+		model.fit(
+			x=imgs, y=self.pose_embedding.predict(np.arange(imgs.shape[0])),
+			batch_size=batch_size, epochs=n_epochs,
+			callbacks=[reduce_lr, checkpoint],
+			verbose=1
+		)
+
+	def train_identity_encoder(self, imgs, identities, batch_size, n_epochs, model_dir):
 		self.identity_encoder = self.__build_identity_encoder(self.config.img_shape, self.config.identity_dim)
 
 		img = Input(shape=self.config.img_shape)
-
-		pose_code = self.pose_encoder(img)
 		identity_code = self.identity_encoder(img)
 
-		model = Model(inputs=img, outputs=[pose_code, identity_code])
+		model = Model(inputs=img, outputs=identity_code)
 		model.compile(
 			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
-			loss=[losses.mean_squared_error, losses.mean_squared_error],
-			loss_weights=[1, 10]
+			loss=losses.mean_squared_error
 		)
 
-		tensorboard = TrainEncodersEvaluationCallback(imgs,
-			self.pose_encoder, self.identity_encoder,
-			self.identity_modulation, self.generator,
-			tensorboard_dir
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1e-3, factor=0.5, patience=50, verbose=1)
+
+		checkpoint = ModelCheckpoint(
+			filepath=os.path.join(model_dir, 'identity_encoder.h5py'),
+			monitor='loss', save_best_only=True, verbose=1
 		)
-
-		reduce_lr = ReduceLROnPlateau(monitor='val_loss', mode='min', min_delta=0.005, factor=0.5, patience=10, verbose=1)
-		early_stopping = EarlyStopping(monitor='val_loss', mode='min', min_delta=0.005, patience=20, verbose=1)
-
-		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
-			x=imgs, y=[self.pose_embedding.predict(np.arange(imgs.shape[0])), self.identity_embedding.predict(identities)],
-			validation_split=0.1,
+			x=imgs, y=self.identity_embedding.predict(identities),
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
+			callbacks=[reduce_lr, checkpoint],
 			verbose=1
 		)
 
@@ -383,7 +400,7 @@ class Converter:
 		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
 		x = LeakyReLU()(x)
 
-		x = Flatten()(x)
+		x = GlobalAveragePooling2D()(x)
 
 		for i in range(2):
 			x = Dense(units=256)(x)

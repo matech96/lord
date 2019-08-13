@@ -112,7 +112,6 @@ def train(args):
 def train_encoders(args):
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.get_model_dir(args.model_name)
-	tensorboard_dir = assets.get_tensorboard_dir(args.model_name)
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
 	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
@@ -125,15 +124,23 @@ def train_encoders(args):
 		os.mkdir(glo_backup_dir)
 		converter.save(glo_backup_dir)
 
-	converter.train_encoders(
+	converter.train_pose_encoder(
+		imgs=imgs,
+
+		batch_size=default_config['train_encoders']['batch_size'],
+		n_epochs=default_config['train_encoders']['n_epochs'],
+
+		model_dir=model_dir
+	)
+
+	converter.train_identity_encoder(
 		imgs=imgs,
 		identities=identities,
 
 		batch_size=default_config['train_encoders']['batch_size'],
 		n_epochs=default_config['train_encoders']['n_epochs'],
 
-		model_dir=model_dir,
-		tensorboard_dir=tensorboard_dir
+		model_dir=model_dir
 	)
 
 	converter.save(model_dir)
