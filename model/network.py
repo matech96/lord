@@ -6,7 +6,7 @@ import numpy as np
 import tensorflow as tf
 
 from keras import backend as K
-from keras import optimizers, losses
+from keras import optimizers, losses, regularizers
 from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Lambda, Flatten, Concatenate, Embedding, GaussianNoise
 from keras.models import Model, load_model
@@ -22,7 +22,7 @@ class Converter:
 	class Config:
 
 		def __init__(self, img_shape, n_imgs, n_identities,
-					 pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim,
+					 pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
 					 perceptual_loss_layers, perceptual_loss_weights):
 
 			self.img_shape = img_shape
@@ -34,6 +34,8 @@ class Converter:
 			self.identity_dim = identity_dim
 
 			self.pose_std = pose_std
+			self.pose_decay = pose_decay
+
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
 
@@ -42,16 +44,16 @@ class Converter:
 
 	@classmethod
 	def build(cls, img_shape, n_imgs, n_identities,
-			  pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim,
+			  pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
 			  perceptual_loss_layers, perceptual_loss_weights):
 
 		config = Converter.Config(
 			img_shape, n_imgs, n_identities,
-			pose_dim, identity_dim, pose_std, n_adain_layers, adain_dim,
+			pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
 			perceptual_loss_layers, perceptual_loss_weights
 		)
 
-		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim, pose_std)
+		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim, pose_std, pose_decay)
 		identity_embedding = cls.__build_identity_embedding(n_identities, identity_dim)
 		identity_modulation = cls.__build_identity_modulation(identity_dim, n_adain_layers, adain_dim)
 		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim, img_shape)
@@ -241,12 +243,17 @@ class Converter:
 		return loss
 
 	@classmethod
-	def __build_pose_embedding(cls, n_imgs, pose_dim, pose_std):
+	def __build_pose_embedding(cls, n_imgs, pose_dim, pose_std, pose_decay):
 		img_id = Input(shape=(1, ))
 
-		pose_embedding = Embedding(input_dim=n_imgs, output_dim=pose_dim, name='pose-embedding')(img_id)
-		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
+		pose_embedding = Embedding(
+			input_dim=n_imgs,
+			output_dim=pose_dim,
+			activity_regularizer=regularizers.l2(pose_decay),
+			name='pose-embedding'
+		)(img_id)
 
+		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
 		pose_embedding = GaussianNoise(stddev=pose_std)(pose_embedding)
 
 		model = Model(inputs=img_id, outputs=pose_embedding)

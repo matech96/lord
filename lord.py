@@ -88,6 +88,8 @@ def train(args):
 		identity_dim=args.identity_dim,
 
 		pose_std=default_config['pose_std'],
+		pose_decay=default_config['pose_decay'],
+
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim'],
 
