@@ -7,14 +7,14 @@ import tensorflow as tf
 
 from keras import backend as K
 from keras import optimizers, losses, regularizers
-from keras.layers import Conv2D, Dense, UpSampling2D, GlobalAveragePooling2D, LeakyReLU, Activation
+from keras.layers import Conv2D, Dense, UpSampling2D, LeakyReLU, Activation
 from keras.layers import Layer, Input, Reshape, Lambda, Flatten, Concatenate, Embedding, GaussianNoise
 from keras.models import Model, load_model
-from keras.callbacks import ReduceLROnPlateau, EarlyStopping, ModelCheckpoint, Callback
+from keras.callbacks import ReduceLROnPlateau, EarlyStopping, Callback
 from keras.applications import vgg16
 from keras_lr_multiplier import LRMultiplier
 
-from model.evaluation import EvaluationCallback
+from model.evaluation import EvaluationCallback, TrainEncodersEvaluationCallback
 
 
 class Converter:
@@ -158,77 +158,41 @@ class Converter:
 			verbose=1
 		)
 
-	def train_pose_encoder(self, imgs, batch_size, n_epochs, model_dir):
+	def train_encoders(self, imgs, identities, batch_size, n_epochs, model_dir, tensorboard_dir):
 		self.pose_encoder = self.__build_pose_encoder(self.config.img_shape, self.config.pose_dim)
-
-		img = Input(shape=self.config.img_shape)
-		pose_code = self.pose_encoder(img)
-
-		model = Model(inputs=img, outputs=pose_code)
-		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
-			loss=losses.mean_squared_error
-		)
-
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1e-3, factor=0.5, patience=50, verbose=1)
-
-		checkpoint = ModelCheckpoint(
-			filepath=os.path.join(model_dir, 'pose_encoder.h5py'),
-			monitor='loss', save_best_only=True, verbose=1
-		)
-
-		model.fit(
-			x=imgs, y=self.pose_embedding.predict(np.arange(imgs.shape[0])),
-			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, checkpoint],
-			verbose=1
-		)
-
-	def train_identity_encoder(self, imgs, identities, batch_size, n_epochs, model_dir):
 		self.identity_encoder = self.__build_identity_encoder(self.config.img_shape, self.config.identity_dim)
 
 		img = Input(shape=self.config.img_shape)
-		identity_code = self.identity_encoder(img)
 
-		model = Model(inputs=img, outputs=identity_code)
+		pose_code = self.pose_encoder(img)
+		identity_code = self.identity_encoder(img)
+		identity_adain_params = self.identity_modulation(identity_code)
+		generated_img = self.generator([pose_code, identity_adain_params])
+
+		model = Model(inputs=img, outputs=[generated_img, pose_code, identity_code])
 		model.compile(
 			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
-			loss=losses.mean_squared_error
+			loss=[self.__perceptual_loss, losses.mean_squared_error, losses.mean_squared_error],
+			loss_weights=[1, 1e4, 1e4]
 		)
 
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1e-3, factor=0.5, patience=50, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=10, verbose=1)
+		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=20, verbose=1)
 
-		checkpoint = ModelCheckpoint(
-			filepath=os.path.join(model_dir, 'identity_encoder.h5py'),
-			monitor='loss', save_best_only=True, verbose=1
+		tensorboard = TrainEncodersEvaluationCallback(imgs,
+			self.pose_encoder, self.identity_encoder,
+			self.identity_modulation, self.generator,
+			tensorboard_dir
 		)
+
+		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
-			x=imgs, y=self.identity_embedding.predict(identities),
+			x=imgs, y=[imgs, self.pose_embedding.predict(np.arange(imgs.shape[0])), self.identity_embedding.predict(identities)],
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, checkpoint],
+			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
 			verbose=1
 		)
-
-	def test(self, imgs, prediction_dir, n_samples):
-		img_idxs = np.random.choice(imgs.shape[0], size=n_samples, replace=False)
-
-		pose_codes = self.pose_encoder.predict(imgs[img_idxs])
-		identity_codes = self.identity_encoder.predict(imgs[img_idxs])
-		identity_adain_params = self.identity_modulation.predict(identity_codes)
-
-		blank = np.zeros_like(imgs[img_idxs][0])
-		summary = [np.concatenate([blank] + list(imgs[img_idxs]), axis=1)]
-		for i in range(n_samples):
-			converted_imgs = [imgs[img_idxs][i]] + [
-				self.generator.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
-				for j in range(n_samples)
-			]
-
-			summary.append(np.concatenate(converted_imgs, axis=1))
-
-		summary_img = np.concatenate(summary, axis=0)
-		imageio.imwrite(os.path.join(prediction_dir, 'summary.png'), (summary_img * 255).astype(np.uint8))
 
 	def __perceptual_loss(self, y_true, y_pred):
 		perceptual_codes_pred = self.vgg(y_pred)
@@ -407,7 +371,7 @@ class Converter:
 		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
 		x = LeakyReLU()(x)
 
-		x = GlobalAveragePooling2D()(x)
+		x = Flatten()(x)
 
 		for i in range(2):
 			x = Dense(units=256)(x)
