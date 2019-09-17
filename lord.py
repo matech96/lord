@@ -94,7 +94,8 @@ def train(args):
 		adain_dim=default_config['adain_dim'],
 
 		perceptual_loss_layers=default_config['perceptual_loss']['layers'],
-		perceptual_loss_weights=default_config['perceptual_loss']['weights']
+		perceptual_loss_weights=default_config['perceptual_loss']['weights'],
+		perceptual_loss_scales=default_config['perceptual_loss']['scales']
 	)
 
 	converter.train(

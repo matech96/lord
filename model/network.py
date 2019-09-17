@@ -23,7 +23,7 @@ class Converter:
 
 		def __init__(self, img_shape, n_imgs, n_identities,
 					 pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
-					 perceptual_loss_layers, perceptual_loss_weights):
+					 perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales):
 
 			self.img_shape = img_shape
 
@@ -41,16 +41,17 @@ class Converter:
 
 			self.perceptual_loss_layers = perceptual_loss_layers
 			self.perceptual_loss_weights = perceptual_loss_weights
+			self.perceptual_loss_scales = perceptual_loss_scales
 
 	@classmethod
 	def build(cls, img_shape, n_imgs, n_identities,
 			  pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
-			  perceptual_loss_layers, perceptual_loss_weights):
+			  perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales):
 
 		config = Converter.Config(
 			img_shape, n_imgs, n_identities,
 			pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
-			perceptual_loss_layers, perceptual_loss_weights
+			perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales
 		)
 
 		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim, pose_std, pose_decay)
@@ -132,14 +133,14 @@ class Converter:
 				optimizer=optimizers.Adam(beta_1=0.5, beta_2=0.999),
 				multipliers={
 					'pose-embedding': 10,
-					# 'identity-embedding': 10
+					'identity-embedding': 10
 				}
 			),
 
-			loss=self.__perceptual_loss
+			loss=self.__perceptual_loss_multiscale
 		)
 
-		lr_scheduler = CosineLearningRateScheduler(max_lr=5e-4, min_lr=1e-5, total_epochs=n_epochs)
+		lr_scheduler = CosineLearningRateScheduler(max_lr=1e-4, min_lr=1e-5, total_epochs=n_epochs)
 		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
 
 		tensorboard = EvaluationCallback(
@@ -176,8 +177,8 @@ class Converter:
 			loss_weights=[1, 1e4, 1e4]
 		)
 
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=10, verbose=1)
-		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=20, verbose=1)
+		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=20, verbose=1)
+		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=40, verbose=1)
 
 		tensorboard = TrainEncodersEvaluationCallback(imgs,
 			self.pose_encoder, self.identity_encoder,
@@ -202,9 +203,21 @@ class Converter:
 		loss = 0
 
 		for i, (p, t) in enumerate(zip(perceptual_codes_pred, perceptual_codes_true)):
-			loss += normalized_weights[i] * K.mean(K.abs(p - t))
+			loss += normalized_weights[i] * K.mean(K.abs(p - t), axis=[1, 2, 3])
 
+		loss = K.mean(loss)
 		return loss
+
+	def __perceptual_loss_multiscale(self, y_true, y_pred):
+		loss = 0
+
+		for scale in self.config.perceptual_loss_scales:
+			y_true_resized = tf.image.resize_images(y_true, (scale, scale), method=tf.image.ResizeMethod.BILINEAR)
+			y_pred_resized = tf.image.resize_images(y_pred, (scale, scale), method=tf.image.ResizeMethod.BILINEAR)
+
+			loss += self.__perceptual_loss(y_true_resized, y_pred_resized)
+
+		return loss / len(self.config.perceptual_loss_scales)
 
 	@classmethod
 	def __build_pose_embedding(cls, n_imgs, pose_dim, pose_std, pose_decay):
