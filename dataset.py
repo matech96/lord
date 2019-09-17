@@ -11,6 +11,8 @@ import h5py
 from keras.datasets import mnist
 from scipy.ndimage.filters import gaussian_filter
 
+from facedetection.face_detection import FaceDetector
+
 
 supported_datasets = [
 	'mnist',
@@ -19,6 +21,7 @@ supported_datasets = [
 	'shapes3d',
 	'celeba',
 	'kth',
+	'rafd',
 	'edges2shoes'
 ]
 
@@ -41,6 +44,9 @@ def get_dataset(dataset_id, path=None):
 
 	if dataset_id == 'kth':
 		return KTH(path)
+
+	if dataset_id == 'rafd':
+		return RaFD(path)
 
 	if dataset_id == 'edges2shoes':
 		return Edges2Shoes(path)
@@ -306,3 +312,44 @@ class Edges2Shoes(DataSet):
 		poses = np.zeros_like(identities)
 
 		return imgs, identities, poses
+
+
+class RaFD(DataSet):
+
+	def __init__(self, base_dir):
+		super().__init__(base_dir)
+
+	def __list_imgs(self):
+		img_paths = []
+		expression_ids = []
+
+		regex = re.compile('Rafd(\d+)_(\d+)_(\w+)_(\w+)_(\w+)_(\w+).jpg')
+		for file_name in os.listdir(self._base_dir):
+			img_path = os.path.join(self._base_dir, file_name)
+			idx, identity_id, description, gender, expression_id, angle = regex.match(file_name).groups()
+
+			img_paths.append(img_path)
+			expression_ids.append(expression_id)
+
+		return img_paths, expression_ids
+
+	def read_images(self):
+		img_paths, expression_ids = self.__list_imgs()
+
+		unique_expression_ids = list(set(expression_ids))
+
+		imgs = np.empty(shape=(len(img_paths), 64, 64, 3), dtype=np.uint8)
+		expressions = np.empty(shape=(len(img_paths), ), dtype=np.uint32)
+
+		face_detector = FaceDetector()
+		for i in range(len(img_paths)):
+			img = imageio.imread(img_paths[i])
+			face_bb = face_detector.detect_face(img)
+
+			top = max((face_bb.bottom + face_bb.top) // 2 - 681 // 2, 0)
+			face = img[top:(top + 681), :]
+
+			imgs[i] = cv2.resize(face, dsize=(64, 64))
+			expressions[i] = unique_expression_ids.index(expression_ids[i])
+
+		return imgs, expressions, np.zeros_like(expressions)
