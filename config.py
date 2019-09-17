@@ -12,7 +12,7 @@ default_config = dict(
 
 	train=dict(
 		batch_size=64,
-		n_epochs=10000
+		n_epochs=1000
 	),
 
 	train_encoders=dict(

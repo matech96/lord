@@ -129,18 +129,18 @@ class Converter:
 
 		model.compile(
 			optimizer=LRMultiplier(
-				optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+				optimizer=optimizers.Adam(beta_1=0.5, beta_2=0.999),
 				multipliers={
 					'pose-embedding': 10,
-					'identity-embedding': 10
+					# 'identity-embedding': 10
 				}
 			),
 
 			loss=self.__perceptual_loss
 		)
 
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=10, verbose=1)
-		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=20, verbose=1)
+		lr_scheduler = CosineLearningRateScheduler(max_lr=5e-4, min_lr=1e-5, total_epochs=n_epochs)
+		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
 
 		tensorboard = EvaluationCallback(
 			imgs, identities,
@@ -154,7 +154,7 @@ class Converter:
 		model.fit(
 			x=[np.arange(imgs.shape[0]), identities], y=imgs,
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
+			callbacks=[lr_scheduler, early_stopping, checkpoint, tensorboard],
 			verbose=1
 		)
 
@@ -437,3 +437,23 @@ class CustomModelCheckpoint(Callback):
 
 	def on_epoch_end(self, epoch, logs=None):
 		self.__model.save(self.__path)
+
+
+class CosineLearningRateScheduler(Callback):
+
+	def __init__(self, max_lr, min_lr, total_epochs):
+		super().__init__()
+
+		self.max_lr = max_lr
+		self.min_lr = min_lr
+		self.total_epochs = total_epochs
+
+	def on_train_begin(self, logs=None):
+		K.set_value(self.model.optimizer.lr, self.max_lr)
+
+	def on_epoch_end(self, epoch, logs=None):
+		fraction = epoch / self.total_epochs
+		lr = self.min_lr + 0.5 * (self.max_lr - self.min_lr) * (1 + np.cos(fraction * np.pi))
+
+		K.set_value(self.model.optimizer.lr, lr)
+		logs['lr'] = lr
