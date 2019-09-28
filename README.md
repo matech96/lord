@@ -4,7 +4,7 @@ Implementation of the method described in the paper: [Demystifying Inter-Class D
 ## Content transfer between classes
 | Cars3D | SmallNorb | KTH |
 | :---: | :---: | :---: |
-| ![image](http://www.vision.huji.ac.il/lord/img/cars3d/ours.png) | ![image](http://www.vision.huji.ac.il/lord/img/smallnorb-poses/ours.png) | ![image](http://www.vision.huji.ac.il/lord/img/kth/ours.png) |
+| ![image](http://www.vision.huji.ac.il/lord/img/cars3d/ours.jpg) | ![image](http://www.vision.huji.ac.il/lord/img/smallnorb-poses/ours.png) | ![image](http://www.vision.huji.ac.il/lord/img/kth/ours.png) |
 
 | CelebA |
 | :---: |
