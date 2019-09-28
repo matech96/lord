@@ -13,35 +13,35 @@ def preprocess(args):
 	assets = AssetManager(args.base_dir)
 
 	img_dataset = dataset.get_dataset(args.dataset_id, args.dataset_path)
-	imgs, identities, poses = img_dataset.read_images()
-	n_identities = np.unique(identities).size
+	imgs, classes, contents = img_dataset.read_images()
+	n_classes = np.unique(classes).size
 
 	np.savez(
 		file=assets.get_preprocess_file_path(args.data_name),
-		imgs=imgs, identities=identities, poses=poses, n_identities=n_identities
+		imgs=imgs, classes=classes, contents=contents, n_classes=n_classes
 	)
 
 
-def split_identities(args):
+def split_classes(args):
 	assets = AssetManager(args.base_dir)
 
 	data = np.load(assets.get_preprocess_file_path(args.input_data_name))
-	imgs, identities, poses = data['imgs'], data['identities'], data['poses']
+	imgs, classes, contents = data['imgs'], data['classes'], data['contents']
 
-	n_identities = np.unique(identities).size
-	test_identities = np.random.choice(n_identities, size=args.num_test_identities, replace=False)
+	n_classes = np.unique(classes).size
+	test_classes = np.random.choice(n_classes, size=args.num_test_classes, replace=False)
 
-	test_idx = np.isin(identities, test_identities)
-	train_idx = ~np.isin(identities, test_identities)
+	test_idx = np.isin(classes, test_classes)
+	train_idx = ~np.isin(classes, test_classes)
 
 	np.savez(
 		file=assets.get_preprocess_file_path(args.test_data_name),
-		imgs=imgs[test_idx], identities=identities[test_idx], poses=poses[test_idx], n_identities=n_identities
+		imgs=imgs[test_idx], classes=classes[test_idx], contents=contents[test_idx], n_classes=n_classes
 	)
 
 	np.savez(
 		file=assets.get_preprocess_file_path(args.train_data_name),
-		imgs=imgs[train_idx], identities=identities[train_idx], poses=poses[train_idx], n_identities=n_identities
+		imgs=imgs[train_idx], classes=classes[train_idx], contents=contents[train_idx], n_classes=n_classes
 	)
 
 
@@ -49,9 +49,9 @@ def split_samples(args):
 	assets = AssetManager(args.base_dir)
 
 	data = np.load(assets.get_preprocess_file_path(args.input_data_name))
-	imgs, identities, poses = data['imgs'], data['identities'], data['poses']
+	imgs, classes, contents = data['imgs'], data['classes'], data['contents']
 
-	n_identities = np.unique(identities).size
+	n_classes = np.unique(classes).size
 	n_samples = imgs.shape[0]
 
 	n_test_samples = int(n_samples * args.test_split)
@@ -61,12 +61,12 @@ def split_samples(args):
 
 	np.savez(
 		file=assets.get_preprocess_file_path(args.test_data_name),
-		imgs=imgs[test_idx], identities=identities[test_idx], poses=poses[test_idx], n_identities=n_identities
+		imgs=imgs[test_idx], classes=classes[test_idx], contents=contents[test_idx], n_classes=n_classes
 	)
 
 	np.savez(
 		file=assets.get_preprocess_file_path(args.train_data_name),
-		imgs=imgs[train_idx], identities=identities[train_idx], poses=poses[train_idx], n_identities=n_identities
+		imgs=imgs[train_idx], classes=classes[train_idx], contents=contents[train_idx], n_classes=n_classes
 	)
 
 
@@ -76,19 +76,19 @@ def train(args):
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
-	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
+	imgs, classes, contents, n_classes = data['imgs'], data['classes'], data['contents'], data['n_classes']
 	imgs = imgs.astype(np.float32) / 255.0
 
 	converter = Converter.build(
 		img_shape=imgs.shape[1:],
 		n_imgs=imgs.shape[0],
-		n_identities=n_identities,
+		n_classes=n_classes,
 
-		pose_dim=args.pose_dim,
-		identity_dim=args.identity_dim,
+		content_dim=args.content_dim,
+		class_dim=args.class_dim,
 
-		pose_std=default_config['pose_std'],
-		pose_decay=default_config['pose_decay'],
+		content_std=default_config['content_std'],
+		content_decay=default_config['content_decay'],
 
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_dim=default_config['adain_dim'],
@@ -100,7 +100,7 @@ def train(args):
 
 	converter.train(
 		imgs=imgs,
-		identities=identities,
+		classes=classes,
 
 		batch_size=default_config['train']['batch_size'],
 		n_epochs=default_config['train']['n_epochs'],
@@ -118,7 +118,7 @@ def train_encoders(args):
 	tensorboard_dir = assets.get_tensorboard_dir(args.model_name)
 
 	data = np.load(assets.get_preprocess_file_path(args.data_name))
-	imgs, identities, poses, n_identities = data['imgs'], data['identities'], data['poses'], data['n_identities']
+	imgs, classes, contents, n_classes = data['imgs'], data['classes'], data['contents'], data['n_classes']
 	imgs = imgs.astype(np.float32) / 255.0
 
 	converter = Converter.load(model_dir, include_encoders=False)
@@ -130,7 +130,7 @@ def train_encoders(args):
 
 	converter.train_encoders(
 		imgs=imgs,
-		identities=identities,
+		classes=classes,
 
 		batch_size=default_config['train_encoders']['batch_size'],
 		n_epochs=default_config['train_encoders']['n_epochs'],
@@ -155,12 +155,12 @@ def main():
 	preprocess_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	preprocess_parser.set_defaults(func=preprocess)
 
-	split_identities_parser = action_parsers.add_parser('split-identities')
-	split_identities_parser.add_argument('-idn', '--input-data-name', type=str, required=True)
-	split_identities_parser.add_argument('-trdn', '--train-data-name', type=str, required=True)
-	split_identities_parser.add_argument('-tsdn', '--test-data-name', type=str, required=True)
-	split_identities_parser.add_argument('-ntsi', '--num-test-identities', type=int, required=True)
-	split_identities_parser.set_defaults(func=split_identities)
+	split_classes_parser = action_parsers.add_parser('split-classes')
+	split_classes_parser.add_argument('-idn', '--input-data-name', type=str, required=True)
+	split_classes_parser.add_argument('-trdn', '--train-data-name', type=str, required=True)
+	split_classes_parser.add_argument('-tsdn', '--test-data-name', type=str, required=True)
+	split_classes_parser.add_argument('-ntsi', '--num-test-classes', type=int, required=True)
+	split_classes_parser.set_defaults(func=split_classes)
 
 	split_samples_parser = action_parsers.add_parser('split-samples')
 	split_samples_parser.add_argument('-idn', '--input-data-name', type=str, required=True)
@@ -172,8 +172,8 @@ def main():
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	train_parser.add_argument('-pd', '--pose-dim', type=int, required=True)
-	train_parser.add_argument('-id', '--identity-dim', type=int, required=True)
+	train_parser.add_argument('-pd', '--content-dim', type=int, required=True)
+	train_parser.add_argument('-id', '--class-dim', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 

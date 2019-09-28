@@ -9,16 +9,16 @@ from keras.callbacks import TensorBoard
 
 class EvaluationCallback(TensorBoard):
 
-	def __init__(self, imgs, identities, pose_embedding, identity_embedding, identity_modulation, generator, tensorboard_dir):
+	def __init__(self, imgs, classes, content_embedding, class_embedding, class_modulation, generator, tensorboard_dir):
 		super().__init__(log_dir=tensorboard_dir)
 		super().set_model(generator)
 
 		self.__imgs = imgs
-		self.__identities = identities
+		self.__classes = classes
 
-		self.__pose_embedding = pose_embedding
-		self.__identity_embedding = identity_embedding
-		self.__identity_modulation = identity_modulation
+		self.__content_embedding = content_embedding
+		self.__class_embedding = class_embedding
+		self.__class_modulation = class_modulation
 		self.__generator = generator
 
 		self.__n_samples_per_evaluation = 5
@@ -28,17 +28,17 @@ class EvaluationCallback(TensorBoard):
 
 		img_ids = np.random.choice(self.__imgs.shape[0], size=self.__n_samples_per_evaluation, replace=False)
 		imgs = self.__imgs[img_ids]
-		identities = self.__identities[img_ids]
+		classes = self.__classes[img_ids]
 
-		pose_codes = self.__pose_embedding.predict(img_ids)
-		identity_codes = self.__identity_embedding.predict(identities)
-		identity_adain_params = self.__identity_modulation.predict(identity_codes)
+		content_codes = self.__content_embedding.predict(img_ids)
+		class_codes = self.__class_embedding.predict(classes)
+		class_adain_params = self.__class_modulation.predict(class_codes)
 
 		blank = np.zeros_like(imgs[0])
 		output = [np.concatenate([blank] + list(imgs), axis=1)]
 		for i in range(self.__n_samples_per_evaluation):
 			converted_imgs = [imgs[i]] + [
-				self.__generator.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
+				self.__generator.predict([content_codes[[j]], class_adain_params[[i]]])[0]
 				for j in range(self.__n_samples_per_evaluation)
 			]
 
@@ -53,15 +53,15 @@ class EvaluationCallback(TensorBoard):
 
 class TrainEncodersEvaluationCallback(TensorBoard):
 
-	def __init__(self, imgs, pose_encoder, identity_encoder, identity_modulation, generator, tensorboard_dir):
+	def __init__(self, imgs, content_encoder, class_encoder, class_modulation, generator, tensorboard_dir):
 		super().__init__(log_dir=tensorboard_dir)
 		super().set_model(generator)
 
 		self.__imgs = imgs
 
-		self.__pose_encoder = pose_encoder
-		self.__identity_encoder = identity_encoder
-		self.__identity_modulation = identity_modulation
+		self.__content_encoder = content_encoder
+		self.__class_encoder = class_encoder
+		self.__class_modulation = class_modulation
 		self.__generator = generator
 
 		self.__n_samples_per_evaluation = 10
@@ -78,15 +78,15 @@ class TrainEncodersEvaluationCallback(TensorBoard):
 		img_ids = np.random.choice(self.__imgs.shape[0], size=self.__n_samples_per_evaluation, replace=False)
 		imgs = self.__imgs[img_ids]
 
-		pose_codes = self.__pose_encoder.predict(imgs)
-		identity_codes = self.__identity_encoder.predict(imgs)
-		identity_adain_params = self.__identity_modulation.predict(identity_codes)
+		content_codes = self.__content_encoder.predict(imgs)
+		class_codes = self.__class_encoder.predict(imgs)
+		class_adain_params = self.__class_modulation.predict(class_codes)
 
 		blank = np.zeros_like(imgs[0])
 		output = [np.concatenate([blank] + list(imgs), axis=1)]
 		for i in range(self.__n_samples_per_evaluation):
 			converted_imgs = [imgs[i]] + [
-				self.__generator.predict([pose_codes[[j]], identity_adain_params[[i]]])[0]
+				self.__generator.predict([content_codes[[j]], class_adain_params[[i]]])[0]
 				for j in range(self.__n_samples_per_evaluation)
 			]
 

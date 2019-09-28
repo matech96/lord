@@ -1,6 +1,5 @@
 import os
 import pickle
-import imageio
 
 import numpy as np
 import tensorflow as tf
@@ -21,20 +20,20 @@ class Converter:
 
 	class Config:
 
-		def __init__(self, img_shape, n_imgs, n_identities,
-					 pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
+		def __init__(self, img_shape, n_imgs, n_classes,
+					 content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
 					 perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales):
 
 			self.img_shape = img_shape
 
 			self.n_imgs = n_imgs
-			self.n_identities = n_identities
+			self.n_classes = n_classes
 
-			self.pose_dim = pose_dim
-			self.identity_dim = identity_dim
+			self.content_dim = content_dim
+			self.class_dim = class_dim
 
-			self.pose_std = pose_std
-			self.pose_decay = pose_decay
+			self.content_std = content_std
+			self.content_decay = content_decay
 
 			self.n_adain_layers = n_adain_layers
 			self.adain_dim = adain_dim
@@ -44,22 +43,22 @@ class Converter:
 			self.perceptual_loss_scales = perceptual_loss_scales
 
 	@classmethod
-	def build(cls, img_shape, n_imgs, n_identities,
-			  pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
+	def build(cls, img_shape, n_imgs, n_classes,
+			  content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
 			  perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales):
 
 		config = Converter.Config(
-			img_shape, n_imgs, n_identities,
-			pose_dim, identity_dim, pose_std, pose_decay, n_adain_layers, adain_dim,
+			img_shape, n_imgs, n_classes,
+			content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
 			perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales
 		)
 
-		pose_embedding = cls.__build_pose_embedding(n_imgs, pose_dim, pose_std, pose_decay)
-		identity_embedding = cls.__build_identity_embedding(n_identities, identity_dim)
-		identity_modulation = cls.__build_identity_modulation(identity_dim, n_adain_layers, adain_dim)
-		generator = cls.__build_generator(pose_dim, n_adain_layers, adain_dim, img_shape)
+		content_embedding = cls.__build_content_embedding(n_imgs, content_dim, content_std, content_decay)
+		class_embedding = cls.__build_class_embedding(n_classes, class_dim)
+		class_modulation = cls.__build_class_modulation(class_dim, n_adain_layers, adain_dim)
+		generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape)
 
-		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
+		return Converter(config, content_embedding, class_embedding, class_modulation, generator)
 
 	@classmethod
 	def load(cls, model_dir, include_encoders=False):
@@ -68,21 +67,21 @@ class Converter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
 			config = pickle.load(config_fd)
 
-		pose_embedding = load_model(os.path.join(model_dir, 'pose_embedding.h5py'))
-		identity_embedding = load_model(os.path.join(model_dir, 'identity_embedding.h5py'))
-		identity_modulation = load_model(os.path.join(model_dir, 'identity_modulation.h5py'))
+		content_embedding = load_model(os.path.join(model_dir, 'content_embedding.h5py'))
+		class_embedding = load_model(os.path.join(model_dir, 'class_embedding.h5py'))
+		class_modulation = load_model(os.path.join(model_dir, 'class_modulation.h5py'))
 
 		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
 			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
 		})
 
 		if not include_encoders:
-			return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator)
+			return Converter(config, content_embedding, class_embedding, class_modulation, generator)
 
-		pose_encoder = load_model(os.path.join(model_dir, 'pose_encoder.h5py'))
-		identity_encoder = load_model(os.path.join(model_dir, 'identity_encoder.h5py'))
+		content_encoder = load_model(os.path.join(model_dir, 'content_encoder.h5py'))
+		class_encoder = load_model(os.path.join(model_dir, 'class_encoder.h5py'))
 
-		return Converter(config, pose_embedding, identity_embedding, identity_modulation, generator, pose_encoder, identity_encoder)
+		return Converter(config, content_embedding, class_embedding, class_modulation, generator, content_encoder, class_encoder)
 
 	def save(self, model_dir):
 		print('saving models...')
@@ -90,50 +89,50 @@ class Converter:
 		with open(os.path.join(model_dir, 'config.pkl'), 'wb') as config_fd:
 			pickle.dump(self.config, config_fd)
 
-		self.pose_embedding.save(os.path.join(model_dir, 'pose_embedding.h5py'))
-		self.identity_embedding.save(os.path.join(model_dir, 'identity_embedding.h5py'))
-		self.identity_modulation.save(os.path.join(model_dir, 'identity_modulation.h5py'))
+		self.content_embedding.save(os.path.join(model_dir, 'content_embedding.h5py'))
+		self.class_embedding.save(os.path.join(model_dir, 'class_embedding.h5py'))
+		self.class_modulation.save(os.path.join(model_dir, 'class_modulation.h5py'))
 		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
 
-		if self.pose_encoder:
-			self.pose_encoder.save(os.path.join(model_dir, 'pose_encoder.h5py'))
+		if self.content_encoder:
+			self.content_encoder.save(os.path.join(model_dir, 'content_encoder.h5py'))
 
-		if self.identity_encoder:
-			self.identity_encoder.save(os.path.join(model_dir, 'identity_encoder.h5py'))
+		if self.class_encoder:
+			self.class_encoder.save(os.path.join(model_dir, 'class_encoder.h5py'))
 
 	def __init__(self, config,
-				 pose_embedding, identity_embedding,
-				 identity_modulation, generator,
-				 pose_encoder=None, identity_encoder=None):
+				 content_embedding, class_embedding,
+				 class_modulation, generator,
+				 content_encoder=None, class_encoder=None):
 
 		self.config = config
 
-		self.pose_embedding = pose_embedding
-		self.identity_embedding = identity_embedding
-		self.identity_modulation = identity_modulation
+		self.content_embedding = content_embedding
+		self.class_embedding = class_embedding
+		self.class_modulation = class_modulation
 		self.generator = generator
-		self.pose_encoder = pose_encoder
-		self.identity_encoder = identity_encoder
+		self.content_encoder = content_encoder
+		self.class_encoder = class_encoder
 
 		self.vgg = self.__build_vgg()
 
-	def train(self, imgs, identities, batch_size, n_epochs, model_dir, tensorboard_dir):
+	def train(self, imgs, classes, batch_size, n_epochs, model_dir, tensorboard_dir):
 		img_id = Input(shape=(1, ))
-		identity = Input(shape=(1, ))
+		class_id = Input(shape=(1, ))
 
-		pose_code = self.pose_embedding(img_id)
-		identity_code = self.identity_embedding(identity)
-		identity_adain_params = self.identity_modulation(identity_code)
-		generated_img = self.generator([pose_code, identity_adain_params])
+		content_code = self.content_embedding(img_id)
+		class_code = self.class_embedding(class_id)
+		class_adain_params = self.class_modulation(class_code)
+		generated_img = self.generator([content_code, class_adain_params])
 
-		model = Model(inputs=[img_id, identity], outputs=generated_img)
+		model = Model(inputs=[img_id, class_id], outputs=generated_img)
 
 		model.compile(
 			optimizer=LRMultiplier(
 				optimizer=optimizers.Adam(beta_1=0.5, beta_2=0.999),
 				multipliers={
-					'pose-embedding': 10,
-					'identity-embedding': 10
+					'content-embedding': 10,
+					'class-embedding': 10
 				}
 			),
 
@@ -144,33 +143,33 @@ class Converter:
 		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
 
 		tensorboard = EvaluationCallback(
-			imgs, identities,
-			self.pose_embedding, self.identity_embedding,
-			self.identity_modulation, self.generator,
+			imgs, classes,
+			self.content_embedding, self.class_embedding,
+			self.class_modulation, self.generator,
 			tensorboard_dir
 		)
 
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
-			x=[np.arange(imgs.shape[0]), identities], y=imgs,
+			x=[np.arange(imgs.shape[0]), classes], y=imgs,
 			batch_size=batch_size, epochs=n_epochs,
 			callbacks=[lr_scheduler, early_stopping, checkpoint, tensorboard],
 			verbose=1
 		)
 
-	def train_encoders(self, imgs, identities, batch_size, n_epochs, model_dir, tensorboard_dir):
-		self.pose_encoder = self.__build_pose_encoder(self.config.img_shape, self.config.pose_dim)
-		self.identity_encoder = self.__build_identity_encoder(self.config.img_shape, self.config.identity_dim)
+	def train_encoders(self, imgs, classes, batch_size, n_epochs, model_dir, tensorboard_dir):
+		self.content_encoder = self.__build_content_encoder(self.config.img_shape, self.config.content_dim)
+		self.class_encoder = self.__build_class_encoder(self.config.img_shape, self.config.class_dim)
 
 		img = Input(shape=self.config.img_shape)
 
-		pose_code = self.pose_encoder(img)
-		identity_code = self.identity_encoder(img)
-		identity_adain_params = self.identity_modulation(identity_code)
-		generated_img = self.generator([pose_code, identity_adain_params])
+		content_code = self.content_encoder(img)
+		class_code = self.class_encoder(img)
+		class_adain_params = self.class_modulation(class_code)
+		generated_img = self.generator([content_code, class_adain_params])
 
-		model = Model(inputs=img, outputs=[generated_img, pose_code, identity_code])
+		model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
 		model.compile(
 			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
 			loss=[self.__perceptual_loss, losses.mean_squared_error, losses.mean_squared_error],
@@ -181,15 +180,15 @@ class Converter:
 		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=40, verbose=1)
 
 		tensorboard = TrainEncodersEvaluationCallback(imgs,
-			self.pose_encoder, self.identity_encoder,
-			self.identity_modulation, self.generator,
+			self.content_encoder, self.class_encoder,
+			self.class_modulation, self.generator,
 			tensorboard_dir
 		)
 
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
-			x=imgs, y=[imgs, self.pose_embedding.predict(np.arange(imgs.shape[0])), self.identity_embedding.predict(identities)],
+			x=imgs, y=[imgs, self.content_embedding.predict(np.arange(imgs.shape[0])), self.class_embedding.predict(classes)],
 			batch_size=batch_size, epochs=n_epochs,
 			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
 			verbose=1
@@ -220,64 +219,64 @@ class Converter:
 		return loss / len(self.config.perceptual_loss_scales)
 
 	@classmethod
-	def __build_pose_embedding(cls, n_imgs, pose_dim, pose_std, pose_decay):
+	def __build_content_embedding(cls, n_imgs, content_dim, content_std, content_decay):
 		img_id = Input(shape=(1, ))
 
-		pose_embedding = Embedding(
+		content_embedding = Embedding(
 			input_dim=n_imgs,
-			output_dim=pose_dim,
-			activity_regularizer=regularizers.l2(pose_decay),
-			name='pose-embedding'
+			output_dim=content_dim,
+			activity_regularizer=regularizers.l2(content_decay),
+			name='content-embedding'
 		)(img_id)
 
-		pose_embedding = Reshape(target_shape=(pose_dim, ))(pose_embedding)
-		pose_embedding = GaussianNoise(stddev=pose_std)(pose_embedding)
+		content_embedding = Reshape(target_shape=(content_dim, ))(content_embedding)
+		content_embedding = GaussianNoise(stddev=content_std)(content_embedding)
 
-		model = Model(inputs=img_id, outputs=pose_embedding)
+		model = Model(inputs=img_id, outputs=content_embedding)
 
-		print('pose embedding:')
+		print('content embedding:')
 		model.summary()
 
 		return model
 
 	@classmethod
-	def __build_identity_embedding(cls, n_identities, identity_dim):
-		identity = Input(shape=(1, ))
+	def __build_class_embedding(cls, n_classes, class_dim):
+		class_id = Input(shape=(1, ))
 
-		identity_embedding = Embedding(input_dim=n_identities, output_dim=identity_dim, name='identity-embedding')(identity)
-		identity_embedding = Reshape(target_shape=(identity_dim, ))(identity_embedding)
+		class_embedding = Embedding(input_dim=n_classes, output_dim=class_dim, name='class-embedding')(class_id)
+		class_embedding = Reshape(target_shape=(class_dim, ))(class_embedding)
 
-		model = Model(inputs=identity, outputs=identity_embedding)
+		model = Model(inputs=class_id, outputs=class_embedding)
 
-		print('identity embedding:')
+		print('class embedding:')
 		model.summary()
 
 		return model
 
 	@classmethod
-	def __build_identity_modulation(cls, identity_dim, n_adain_layers, adain_dim):
-		identity_code = Input(shape=(identity_dim, ))
+	def __build_class_modulation(cls, class_dim, n_adain_layers, adain_dim):
+		class_code = Input(shape=(class_dim, ))
 
-		adain_per_layer = [Dense(units=adain_dim * 2)(identity_code) for _ in range(n_adain_layers)]
+		adain_per_layer = [Dense(units=adain_dim * 2)(class_code) for _ in range(n_adain_layers)]
 		adain_all = Concatenate(axis=-1)(adain_per_layer)
-		identity_adain_params = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(adain_all)
+		class_adain_params = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(adain_all)
 
-		model = Model(inputs=[identity_code], outputs=identity_adain_params, name='identity-modulation')
+		model = Model(inputs=[class_code], outputs=class_adain_params, name='class-modulation')
 
-		print('identity-modulation arch:')
+		print('class-modulation arch:')
 		model.summary()
 
 		return model
 
 	@classmethod
-	def __build_generator(cls, pose_dim, n_adain_layers, adain_dim, img_shape):
-		pose_code = Input(shape=(pose_dim, ))
-		identity_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
+	def __build_generator(cls, content_dim, n_adain_layers, adain_dim, img_shape):
+		content_code = Input(shape=(content_dim, ))
+		class_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
 		initial_height = img_shape[0] // (2 ** n_adain_layers)
 		initial_width = img_shape[1] // (2 ** n_adain_layers)
 
-		x = Dense(units=initial_height * initial_width * (adain_dim // 8))(pose_code)
+		x = Dense(units=initial_height * initial_width * (adain_dim // 8))(content_code)
 		x = LeakyReLU()(x)
 
 		x = Dense(units=initial_height * initial_width * (adain_dim // 4))(x)
@@ -293,7 +292,7 @@ class Converter:
 			x = Conv2D(filters=adain_dim, kernel_size=(3, 3), padding='same')(x)
 			x = LeakyReLU()(x)
 
-			x = AdaptiveInstanceNormalization(adain_layer_idx=i)([x, identity_adain_params])
+			x = AdaptiveInstanceNormalization(adain_layer_idx=i)([x, class_adain_params])
 
 		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
 		x = LeakyReLU()(x)
@@ -301,7 +300,7 @@ class Converter:
 		x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
 		target_img = Activation('sigmoid')(x)
 
-		model = Model(inputs=[pose_code, identity_adain_params], outputs=target_img, name='generator')
+		model = Model(inputs=[content_code, class_adain_params], outputs=target_img, name='generator')
 
 		print('generator arch:')
 		model.summary()
@@ -332,7 +331,7 @@ class Converter:
 		return model
 
 	@classmethod
-	def __build_pose_encoder(cls, img_shape, pose_dim):
+	def __build_content_encoder(cls, img_shape, content_dim):
 		img = Input(shape=img_shape)
 
 		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
@@ -356,17 +355,17 @@ class Converter:
 			x = Dense(units=256)(x)
 			x = LeakyReLU()(x)
 
-		pose_code = Dense(units=pose_dim)(x)
+		content_code = Dense(units=content_dim)(x)
 
-		model = Model(inputs=img, outputs=pose_code, name='pose-encoder')
+		model = Model(inputs=img, outputs=content_code, name='content-encoder')
 
-		print('pose-encoder arch:')
+		print('content-encoder arch:')
 		model.summary()
 
 		return model
 
 	@classmethod
-	def __build_identity_encoder(cls, img_shape, identity_dim):
+	def __build_class_encoder(cls, img_shape, class_dim):
 		img = Input(shape=img_shape)
 
 		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
@@ -390,11 +389,11 @@ class Converter:
 			x = Dense(units=256)(x)
 			x = LeakyReLU()(x)
 
-		identity_code = Dense(units=identity_dim)(x)
+		class_code = Dense(units=class_dim)(x)
 
-		model = Model(inputs=img, outputs=identity_code, name='identity-encoder')
+		model = Model(inputs=img, outputs=class_code, name='class-encoder')
 
-		print('identity-encoder arch:')
+		print('class-encoder arch:')
 		model.summary()
 
 		return model
