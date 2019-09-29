@@ -172,8 +172,8 @@ def main():
 	train_parser = action_parsers.add_parser('train')
 	train_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	train_parser.add_argument('-mn', '--model-name', type=str, required=True)
-	train_parser.add_argument('-pd', '--content-dim', type=int, required=True)
-	train_parser.add_argument('-id', '--class-dim', type=int, required=True)
+	train_parser.add_argument('-cd', '--content-dim', type=int, required=True)
+	train_parser.add_argument('-yd', '--class-dim', type=int, required=True)
 	train_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_parser.set_defaults(func=train)
 
