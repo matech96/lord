@@ -6,12 +6,11 @@ from abc import ABC, abstractmethod
 import numpy as np
 import imageio
 import cv2
+import dlib
 import h5py
 
 from keras.datasets import mnist
 from scipy.ndimage.filters import gaussian_filter
-
-from facedetection.face_detection import FaceDetector
 
 
 supported_datasets = [
@@ -341,12 +340,14 @@ class RaFD(DataSet):
 		imgs = np.empty(shape=(len(img_paths), 64, 64, 3), dtype=np.uint8)
 		expressions = np.empty(shape=(len(img_paths), ), dtype=np.uint32)
 
-		face_detector = FaceDetector()
+		face_detector = dlib.get_frontal_face_detector()
 		for i in range(len(img_paths)):
 			img = imageio.imread(img_paths[i])
-			face_bb = face_detector.detect_face(img)
 
-			top = max((face_bb.bottom + face_bb.top) // 2 - 681 // 2, 0)
+			detections, scores, weight_indices = face_detector.run(img, upsample_num_times=0, adjust_threshold=-1)
+			face_bb = detections[np.argmax(scores)]
+
+			top = max((face_bb.bottom() + face_bb.top()) // 2 - 681 // 2, 0)
 			face = img[top:(top + 681), :]
 
 			imgs[i] = cv2.resize(face, dsize=(64, 64))

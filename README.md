@@ -17,7 +17,9 @@ Implementation of the method described in the paper: [Demystifying Inter-Class D
 * numpy >= 1.15.4
 * tensorflow-gpu >= 1.12.0
 * keras >= 2.2.4
+* keras-lr-multiplier >= 0.7.0
 * opencv >= 3.4.4
+* dlib >= 19.17.0
 
 ### Getting started
 Training a model for disentanglement requires several steps.
