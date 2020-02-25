@@ -9,3 +9,5 @@ RUN apt-get install -y build-essential cmake
 #$ sudo apt-get install libopenblas-dev liblapack-dev libatlas-base-dev
 #$ sudo apt-get install libx11-dev libgtk-3-dev
 RUN pip3 install keras-lr-multiplier dlib
+RUN apt update && apt-get install -y git
+RUN pip3 install git+https://github.com/alexlee-gk/lpips-tensorflow.git

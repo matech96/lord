@@ -1,0 +1,10 @@
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results preprocess --dataset-id cars3d --data-name cars3d_preprocessed --dataset-path /opt/project/data/cars
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results split-samples --input-data-name cars3d_preprocessed --train-data-name cars3d_train --test-data-name cars3d_test --test-split 0.2
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py  --base-dir /opt/project/results train     --data-name cars3d_train     --model-name cars3d_model_frist_stage     --content-dim 8     --class-dim 8
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results train-encoders --data-name cars3d_train --model-name cars3d_model_frist_stage
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py 
+
