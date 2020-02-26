@@ -1,8 +1,10 @@
 
 *.png
 *.pyc
+*.csv
 
 data/*
 results/*
+logs/*
 .ipynb_checkpoints
 *-checkpoints.ipynb
