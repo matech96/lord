@@ -74,29 +74,35 @@ class LORDContentClassifier:
         
         self.converter = Converter.load( assets.get_model_dir(model_name), include_encoders=True)
         self.content_codes = self.converter.content_encoder.predict(self.curr_imgs)
+        class_codes = self.converter.class_encoder.predict(self.curr_imgs)
+        class_adain_params = self.converter.class_modulation.predict(class_codes)
+        self.class_adain_params = class_adain_params.reshape(class_adain_params.shape[0], -1)
         
-    def train_classifier(self, n_epochs):        
-        self.model = Sequential()
-        self.model.add(Dense(units=256, activation='relu', input_dim=self.content_codes.shape[1]))
-        self.model.add(Dense(units=10, activation='softmax'))
+    def train_content_classifier(self, n_epochs):        
+        model = self.get_model(self.content_codes.shape[1])        
+        callbacks = [EarlyStopping(), CSVLogger('LORDContentClassifier_content.csv'), TensorBoard()]
+        model.fit(self.content_codes, self.onehot_classes, epochs=20, validation_split=0.3, callbacks=callbacks)
+        
+    def train_class_classifier(self, n_epochs):        
+        model = self.get_model(self.class_adain_params.shape[1])        
+        callbacks = [EarlyStopping(), CSVLogger('LORDContentClassifier_class.csv'), TensorBoard()]
+        model.fit(self.class_adain_params, self.onehot_classes, epochs=20, validation_split=0.3, callbacks=callbacks)
+        
+    def get_model(self, input_dim):
+        model = Sequential()
+        model.add(Dense(units=256, activation='relu', input_dim=input_dim))
+        model.add(Dense(units=10, activation='softmax'))
 
-        self.model.compile(loss='categorical_crossentropy',
+        model.compile(loss='categorical_crossentropy',
                       optimizer='adam',
                       metrics=['accuracy'])
-        
-        self.callbacks = [EarlyStopping(), CSVLogger('LORDContentClassifier_log.csv'), TensorBoard()]
-        self.model.fit(self.content_codes, self.onehot_classes, epochs=20, validation_split=0.3, callbacks=self.callbacks)
+        return model
 
 
-# In[7]:
+# In[6]:
 
 
-c = LORDContentClassifier()
-c.train_classifier(10000)
-
-
-# In[ ]:
-
-
-
+cc = LORDContentClassifier()
+cc.train_content_classifier(10000)
+cc.train_class_classifier(10000)
 

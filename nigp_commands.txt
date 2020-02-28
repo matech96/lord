@@ -8,3 +8,12 @@ docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord 
 
 docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py 
 
+
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results preprocess --dataset-id mnist --data-name mnist_10
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results split-samples --input-data-name mnist_10 --train-data-name mnist_10_train --test-data-name mnist_10_test --test-split 0.2
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py  --base-dir /opt/project/results train     --data-name mnist_10_train     --model-name mnist_model_64    --content-dim 64     --class-dim 10
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results train-encoders --data-name mnist_10_train --model-name mnist_model_64
