@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:1.15.0-gpu-py3
+FROM matech96/jupyter_base
 
 RUN pip3 install keras matplotlib scikit-learn pandas bokeh pydot holoviews librosa scikit-image moviepy tensorflow-graphics-gpu
 RUN apt update && apt-get install -y graphviz
@@ -11,4 +11,4 @@ RUN apt-get install -y build-essential cmake
 RUN pip3 install keras-lr-multiplier dlib
 RUN apt update && apt-get install -y git
 RUN pip3 install git+https://github.com/alexlee-gk/lpips-tensorflow.git
-RUN pip3 install tensorflow-datasets
+RUN pip3 install tensorflow-gpu==1.15 tensorflow-datasets

@@ -101,7 +101,7 @@ class SmallNorb(DataSet):
 					img_path = os.path.join(self._base_dir, category, instance, file_name)
 					azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
-					class_id = '_'.join((category, instance, elevation, lighting, lt_rt))
+					class_id = '_'.join((category, instance))
 					content_id = azimuth
 
 					img_paths.append(img_path)
@@ -122,7 +122,7 @@ class SmallNorb(DataSet):
 
 		for i in range(len(img_paths)):
 			img = imageio.imread(img_paths[i])
-			imgs[i, :, :, 0] = cv2.resize(img, dsize=(64, 64))
+			imgs[i, :, :, 0] = cv2.cvtColor(cv2.resize(img, dsize=(64, 64)), cv2.COLOR_BGR2GRAY)
 
 			classes[i] = unique_class_ids.index(class_ids[i])
 			contents[i] = unique_content_ids.index(content_ids[i])

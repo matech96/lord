@@ -1,12 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" serverName="bs">
+  <component name="PublishConfigData" autoUpload="Always" serverName="bs" exclude=".svn;.cvs;.idea;.DS_Store;.git;.hg;*.hprof;*.pyc;*.mat">
     <serverData>
       <paths name="bs">
         <serverdata>
           <mappings>
             <mapping deploy="/projects/lord" local="$PROJECT_DIR$" web="/" />
           </mappings>
+          <excludedPaths>
+            <excludedPath local="true" path="$PROJECT_DIR$/data" />
+            <excludedPath local="true" path="$PROJECT_DIR$/results" />
+          </excludedPaths>
         </serverdata>
       </paths>
       <paths name="bs_cifar10">
@@ -52,5 +56,6 @@
         </serverdata>
       </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>

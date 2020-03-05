@@ -17,3 +17,12 @@ docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord 
 docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py  --base-dir /opt/project/results train     --data-name mnist_10_train     --model-name mnist_model_64    --content-dim 64     --class-dim 10
 
 docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results train-encoders --data-name mnist_10_train --model-name mnist_model_64
+
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results preprocess --dataset-id smallnorb --dataset-path /opt/project/data/small_norb_lord --data-name smallnorb_strict_class
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results split-samples --input-data-name smallnorb_strict_class --train-data-name smallnorb_strict_class_train --test-data-name smallnorb_strict_class_test --test-split 0.2
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py  --base-dir /opt/project/results train     --data-name smallnorb_strict_class_train     --model-name smallnorb_model     --content-dim 128     --class-dim 128
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results train-encoders --data-name smallnorb_strict_class_train --model-name smallnorb_model
