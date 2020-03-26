@@ -26,3 +26,12 @@ docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord 
 docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py  --base-dir /opt/project/results train     --data-name smallnorb_strict_class_train     --model-name smallnorb_model     --content-dim 128     --class-dim 128
 
 docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results train-encoders --data-name smallnorb_strict_class_train --model-name smallnorb_model
+
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results preprocess --dataset-id emnist --dataset-path /opt/project/data --data-name emnist_preprocessed
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results split-samples --input-data-name emnist_preprocessed --train-data-name emnist_train --test-data-name emnist_test --test-split 0.2
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py  --base-dir /opt/project/results train     --data-name emnist_train     --model-name emnist_model_frist_stage     --content-dim 128     --class-dim 128
+
+docker run --gpus '"device=1"' -v /home/gangoly/lord:/opt/project matech96/lord  python /opt/project/lord.py --base-dir /opt/project/results train-encoders --data-name emnist_train --model-name emnist_model_frist_stage

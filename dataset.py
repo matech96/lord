@@ -102,7 +102,7 @@ class SmallNorb(DataSet):
 					azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
 					class_id = '_'.join((category, instance))
-					content_id = azimuth
+					content_id = '_'.join((azimuth, elevation, lighting, lt_rt))
 
 					img_paths.append(img_path)
 					class_ids.append(class_id)
