@@ -56,8 +56,8 @@ class Converter:
 		content_embedding = cls.__build_content_embedding(n_imgs, content_dim, content_std, content_decay)
 		class_embedding = cls.__build_class_embedding(n_classes, class_dim)
 		class_modulation = cls.__build_class_modulation(class_dim, n_adain_layers, adain_dim)
-		# generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape)
-		generator = cls.__build_generator_no_adain(content_dim, class_dim, n_adain_layers, adain_dim, img_shape)
+		generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape)
+		# generator = cls.__build_generator_no_adain(content_dim, class_dim, n_adain_layers, adain_dim, img_shape)
 
 		return Converter(config, content_embedding, class_embedding, class_modulation, generator)
 
@@ -123,9 +123,9 @@ class Converter:
 
 		content_code = self.content_embedding(img_id)
 		class_code = self.class_embedding(class_id)
-		# class_adain_params = self.class_modulation(class_code)
-		# generated_img = self.generator([content_code, class_adain_params])
-		generated_img = self.generator([content_code, class_code])
+		class_adain_params = self.class_modulation(class_code)
+		generated_img = self.generator([content_code, class_adain_params])
+		# generated_img = self.generator([content_code, class_code])
 
 		model = Model(inputs=[img_id, class_id], outputs=generated_img)
 
@@ -166,17 +166,17 @@ class Converter:
 
 		img = Input(shape=self.config.img_shape)
 
-		# content_code = self.content_encoder(img)
-		# class_code = self.class_encoder(img)
-		# class_adain_params = self.class_modulation(class_code)
-		# generated_img = self.generator([content_code, class_adain_params])
-		#
-		# model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
 		content_code = self.content_encoder(img)
 		class_code = self.class_encoder(img)
-		generated_img = self.generator([content_code, class_code])
+		class_adain_params = self.class_modulation(class_code)
+		generated_img = self.generator([content_code, class_adain_params])
 
 		model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
+		# content_code = self.content_encoder(img)
+		# class_code = self.class_encoder(img)
+		# generated_img = self.generator([content_code, class_code])
+		#
+		# model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
 		model.compile(
 			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
 			loss=[self.__perceptual_loss, losses.mean_squared_error, losses.mean_squared_error],
@@ -466,7 +466,7 @@ class AdaptiveInstanceNormalization(Layer):
 		adain_scale = K.reshape(adain_scale, (-1, 1, 1, adain_dim))
 
 		mean, var = tf.nn.moments(x, axes=[1, 2], keep_dims=True)
-		x_standard = (x - mean) / (tf.sqrt(var) + 1e-7)
+		x_standard = x #(x - mean) / (tf.sqrt(var) + 1e-7)
 
 		return (x_standard * adain_scale) + adain_offset
 
