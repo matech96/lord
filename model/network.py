@@ -56,7 +56,8 @@ class Converter:
 		content_embedding = cls.__build_content_embedding(n_imgs, content_dim, content_std, content_decay)
 		class_embedding = cls.__build_class_embedding(n_classes, class_dim)
 		class_modulation = cls.__build_class_modulation(class_dim, n_adain_layers, adain_dim)
-		generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape)
+		# generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape)
+		generator = cls.__build_generator_no_adain(content_dim, class_dim, n_adain_layers, adain_dim, img_shape)
 
 		return Converter(config, content_embedding, class_embedding, class_modulation, generator)
 
@@ -122,8 +123,9 @@ class Converter:
 
 		content_code = self.content_embedding(img_id)
 		class_code = self.class_embedding(class_id)
-		class_adain_params = self.class_modulation(class_code)
-		generated_img = self.generator([content_code, class_adain_params])
+		# class_adain_params = self.class_modulation(class_code)
+		# generated_img = self.generator([content_code, class_adain_params])
+		generated_img = self.generator([content_code, class_code])
 
 		model = Model(inputs=[img_id, class_id], outputs=generated_img)
 
@@ -142,19 +144,19 @@ class Converter:
 		lr_scheduler = CosineLearningRateScheduler(max_lr=1e-4, min_lr=1e-5, total_epochs=n_epochs)
 		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
 
-		tensorboard = EvaluationCallback(
-			imgs, classes,
-			self.content_embedding, self.class_embedding,
-			self.class_modulation, self.generator,
-			tensorboard_dir
-		)
+		# tensorboard = EvaluationCallback(
+		# 	imgs, classes,
+		# 	self.content_embedding, self.class_embedding,
+		# 	self.class_modulation, self.generator,
+		# 	tensorboard_dir
+		# )
 
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
 			x=[np.arange(imgs.shape[0]), classes], y=imgs,
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[lr_scheduler, early_stopping, checkpoint, tensorboard],
+			callbacks=[lr_scheduler, early_stopping, checkpoint], # tensorboard],
 			verbose=1
 		)
 
@@ -164,10 +166,15 @@ class Converter:
 
 		img = Input(shape=self.config.img_shape)
 
+		# content_code = self.content_encoder(img)
+		# class_code = self.class_encoder(img)
+		# class_adain_params = self.class_modulation(class_code)
+		# generated_img = self.generator([content_code, class_adain_params])
+		#
+		# model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
 		content_code = self.content_encoder(img)
 		class_code = self.class_encoder(img)
-		class_adain_params = self.class_modulation(class_code)
-		generated_img = self.generator([content_code, class_adain_params])
+		generated_img = self.generator([content_code, class_code])
 
 		model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
 		model.compile(
@@ -190,7 +197,7 @@ class Converter:
 		model.fit(
 			x=imgs, y=[imgs, self.content_embedding.predict(np.arange(imgs.shape[0])), self.class_embedding.predict(classes)],
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard],
+			callbacks=[reduce_lr, early_stopping, checkpoint], # tensorboard],
 			verbose=1
 		)
 
@@ -301,6 +308,48 @@ class Converter:
 		target_img = Activation('sigmoid')(x)
 
 		model = Model(inputs=[content_code, class_adain_params], outputs=target_img, name='generator')
+
+		print('generator arch:')
+		model.summary()
+
+		return model
+
+	@classmethod
+	def __build_generator_no_adain(cls, content_dim, class_dim, n_conv_layers, filter_dim, img_shape):
+		content_code = Input(shape=(content_dim, ))
+		class_code = Input(shape=(class_dim, ))
+		# class_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
+
+		initial_height = img_shape[0] // (2 ** n_conv_layers)
+		initial_width = img_shape[1] // (2 ** n_conv_layers)
+
+		x = Concatenate()([content_code, class_code])
+
+		x = Dense(units=initial_height * initial_width * (filter_dim // 8))(x)
+		x = LeakyReLU()(x)
+
+		x = Dense(units=initial_height * initial_width * (filter_dim // 4))(x)
+		x = LeakyReLU()(x)
+
+		x = Dense(units=initial_height * initial_width * filter_dim)(x)
+		x = LeakyReLU()(x)
+
+		x = Reshape(target_shape=(initial_height, initial_width, filter_dim))(x)
+
+		for i in range(n_conv_layers):
+			x = UpSampling2D(size=(2, 2))(x)
+			x = Conv2D(filters=filter_dim, kernel_size=(3, 3), padding='same')(x)
+			x = LeakyReLU()(x)
+
+			# x = AdaptiveInstanceNormalization(adain_layer_idx=i)([x, class_adain_params])
+
+		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
+		x = LeakyReLU()(x)
+
+		x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
+		target_img = Activation('sigmoid')(x)
+
+		model = Model(inputs=[content_code, class_code], outputs=target_img, name='generator')
 
 		print('generator arch:')
 		model.summary()

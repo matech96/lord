@@ -80,13 +80,13 @@ class TrainEncodersEvaluationCallback(TensorBoard):
 
 		content_codes = self.__content_encoder.predict(imgs)
 		class_codes = self.__class_encoder.predict(imgs)
-		class_adain_params = self.__class_modulation.predict(class_codes)
+		# class_adain_params = self.__class_modulation.predict(class_codes)
 
 		blank = np.zeros_like(imgs[0])
 		output = [np.concatenate([blank] + list(imgs), axis=1)]
 		for i in range(self.__n_samples_per_evaluation):
 			converted_imgs = [imgs[i]] + [
-				self.__generator.predict([content_codes[[j]], class_adain_params[[i]]])[0]
+				self.__generator.predict([content_codes[[j]], class_codes[[i]]])[0]
 				for j in range(self.__n_samples_per_evaluation)
 			]
 
