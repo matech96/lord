@@ -1,12 +1,11 @@
 from model.network import Converter
-from wandb.keras import WandbCallback
+import wandb
 import numpy as np
 from keras.callbacks import EarlyStopping
 from assets import AssetManager
 
 from keras.models import Sequential
 from keras.layers import Dense
-from keras.callbacks.callbacks import EarlyStopping, CSVLogger
 
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.utils import shuffle
@@ -43,14 +42,20 @@ class LORDContentClassifier:
 
     def train_content_classifier(self, n_epochs):
         model = self.get_model(self.content_codes.shape[1])
-        callbacks = [EarlyStopping('val_accuracy', patience=10), WandbCallback()]
-        model.fit(self.content_codes, self.onehot_classes, epochs=n_epochs, validation_split=0.3, callbacks=callbacks)
+        callbacks = [EarlyStopping('val_accuracy', patience=10)]
+        hist = model.fit(self.content_codes, self.onehot_classes, epochs=n_epochs, validation_split=0.3,
+                         callbacks=callbacks)
+        wandb.log({'content_classifier_val_acc': hist.history['val_accuracy'][-1],
+                   'content_classifier_n_epoch': hist.epoch[-1]})
 
     def train_class_classifier(self, n_epochs):
         print(f'Class code size: {self.class_codes.shape[1]}')
         model = self.get_model(self.class_codes.shape[1])
-        callbacks = [EarlyStopping('val_accuracy', patience=10), WandbCallback()]
-        model.fit(self.class_codes, self.onehot_classes, epochs=n_epochs, validation_split=0.3, callbacks=callbacks)
+        callbacks = [EarlyStopping('val_accuracy', patience=10)]
+        hist = model.fit(self.class_codes, self.onehot_classes, epochs=n_epochs, validation_split=0.3,
+                         callbacks=callbacks)
+        wandb.log({'class_classifier_val_acc': hist.history['val_accuracy'][-1],
+                   'class_classifier_n_epoch': hist.epoch[-1]})
 
     def get_model(self, input_dim):
         model = Sequential()
