@@ -1,7 +1,7 @@
 from model.network import Converter
 import wandb
 import numpy as np
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, CSVLogger
 from assets import AssetManager
 
 from keras.models import Sequential
@@ -47,6 +47,9 @@ class LORDContentClassifier:
                          callbacks=callbacks)
         wandb.log({'content_classifier_val_acc': hist.history['val_accuracy'][-1],
                    'content_classifier_n_epoch': hist.epoch[-1]})
+        data = [hist.history['val_accuracy'], hist.epoch]
+        wandb.log(
+            {"content_classifier_history": wandb.Table(data=data, columns=["val_acc", "epoch"])})
 
     def train_class_classifier(self, n_epochs):
         print(f'Class code size: {self.class_codes.shape[1]}')
@@ -56,6 +59,9 @@ class LORDContentClassifier:
                          callbacks=callbacks)
         wandb.log({'class_classifier_val_acc': hist.history['val_accuracy'][-1],
                    'class_classifier_n_epoch': hist.epoch[-1]})
+        data = [hist.history['val_accuracy'], hist.epoch]
+        wandb.log(
+            {"class_classifier_history": wandb.Table(data=data, columns=["val_acc", "epoch"])})
 
     def get_model(self, input_dim):
         model = Sequential()
