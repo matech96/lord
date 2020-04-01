@@ -1,6 +1,7 @@
 import os
 import pickle
 
+from wandb.keras import WandbCallback
 import numpy as np
 import tensorflow as tf
 
@@ -144,19 +145,19 @@ class Converter:
 		lr_scheduler = CosineLearningRateScheduler(max_lr=1e-4, min_lr=1e-5, total_epochs=n_epochs)
 		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
 
-		# tensorboard = EvaluationCallback(
-		# 	imgs, classes,
-		# 	self.content_embedding, self.class_embedding,
-		# 	self.class_modulation, self.generator,
-		# 	tensorboard_dir
-		# )
+		tensorboard = EvaluationCallback(
+			imgs, classes,
+			self.content_embedding, self.class_embedding,
+			self.class_modulation, self.generator,
+			tensorboard_dir
+		)
 
 		checkpoint = CustomModelCheckpoint(self, model_dir)
 
 		model.fit(
 			x=[np.arange(imgs.shape[0]), classes], y=imgs,
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[lr_scheduler, early_stopping, checkpoint], # tensorboard],
+			callbacks=[lr_scheduler, early_stopping, checkpoint, tensorboard, WandbCallback()],
 			verbose=1
 		)
 
@@ -197,7 +198,7 @@ class Converter:
 		model.fit(
 			x=imgs, y=[imgs, self.content_embedding.predict(np.arange(imgs.shape[0])), self.class_embedding.predict(classes)],
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, early_stopping, checkpoint], # tensorboard],
+			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard, WandbCallback],
 			verbose=1
 		)
 

@@ -2,6 +2,7 @@ import argparse
 import os
 
 import numpy as np
+import wandb
 
 import dataset
 from assets import AssetManager
@@ -143,6 +144,7 @@ def train_encoders(args):
 
 
 def end2end(args):
+	wandb.init(project="Test project")
 	train(args)
 	train_encoders(args)
 
