@@ -12,3 +12,4 @@ RUN pip3 install keras-lr-multiplier dlib
 RUN apt update && apt-get install -y git
 RUN pip3 install git+https://github.com/alexlee-gk/lpips-tensorflow.git
 RUN pip3 install tensorflow-datasets
+RUN pip3 install wandb

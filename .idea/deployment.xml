@@ -2,24 +2,6 @@
 <project version="4">
   <component name="PublishConfigData" serverName="bs_cifar10_local" exclude=".svn;.cvs;.idea;.DS_Store;.git;.hg;*.hprof;*.pyc;*.mat">
     <serverData>
-      <paths name="bs">
-        <serverdata>
-          <mappings>
-            <mapping deploy="/projects/lord" local="$PROJECT_DIR$" web="/" />
-          </mappings>
-          <excludedPaths>
-            <excludedPath local="true" path="$PROJECT_DIR$/data" />
-            <excludedPath local="true" path="$PROJECT_DIR$/results" />
-          </excludedPaths>
-        </serverdata>
-      </paths>
-      <paths name="bs_cifar10">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
       <paths name="bs_cifar10_local">
         <serverdata>
           <mappings>
@@ -34,21 +16,7 @@
           </mappings>
         </serverdata>
       </paths>
-      <paths name="bs_monodepth">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
       <paths name="bs_monodepth_local">
-        <serverdata>
-          <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
-          </mappings>
-        </serverdata>
-      </paths>
-      <paths name="bs_test_docker">
         <serverdata>
           <mappings>
             <mapping local="$PROJECT_DIR$" web="/" />

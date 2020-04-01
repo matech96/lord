@@ -142,6 +142,11 @@ def train_encoders(args):
 	converter.save(model_dir)
 
 
+def end2end(args):
+	train(args)
+	train_encoders(args)
+
+
 def main():
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-bd', '--base-dir', type=str, required=True)
@@ -183,6 +188,15 @@ def main():
 	train_encoders_parser.add_argument('-gd', '--glo-dir', type=str, default='glo')
 	train_encoders_parser.add_argument('-g', '--gpus', type=int, default=1)
 	train_encoders_parser.set_defaults(func=train_encoders)
+
+	end2end_parser = action_parsers.add_parser('end2end')
+	end2end_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	end2end_parser.add_argument('-mn', '--model-name', type=str, required=True)
+	end2end_parser.add_argument('-cd', '--content-dim', type=int, required=True)
+	end2end_parser.add_argument('-yd', '--class-dim', type=int, required=True)
+	end2end_parser.add_argument('-gd', '--glo-dir', type=str, default='glo')
+	end2end_parser.add_argument('-g', '--gpus', type=int, default=1)
+	end2end_parser.set_defaults(func=end2end)
 
 	args = parser.parse_args()
 	args.func(args)
