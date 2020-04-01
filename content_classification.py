@@ -47,7 +47,7 @@ class LORDContentClassifier:
                          callbacks=callbacks)
         wandb.log({'content_classifier_val_acc': hist.history['val_accuracy'][-1],
                    'content_classifier_n_epoch': hist.epoch[-1]})
-        data = [hist.history['val_accuracy'], hist.epoch]
+        data = list(zip(hist.history['val_accuracy'], hist.epoch))
         wandb.log(
             {"content_classifier_history": wandb.Table(data=data, columns=["val_acc", "epoch"])})
 
@@ -59,7 +59,7 @@ class LORDContentClassifier:
                          callbacks=callbacks)
         wandb.log({'class_classifier_val_acc': hist.history['val_accuracy'][-1],
                    'class_classifier_n_epoch': hist.epoch[-1]})
-        data = [hist.history['val_accuracy'], hist.epoch]
+        data = list(zip(hist.history['val_accuracy'], hist.epoch))
         wandb.log(
             {"class_classifier_history": wandb.Table(data=data, columns=["val_acc", "epoch"])})
 
