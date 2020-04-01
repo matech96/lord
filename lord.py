@@ -74,6 +74,8 @@ def split_samples(args):
 
 
 def train(args):
+	wandb.log(default_config)
+	wandb.log(vars(args))
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
@@ -94,11 +96,13 @@ def train(args):
 		content_decay=default_config['content_decay'],
 
 		n_adain_layers=default_config['n_adain_layers'],
+		adain_enabled=args.adain,
 		adain_dim=default_config['adain_dim'],
+		adain_normalize=args.adain_normalize,
 
 		perceptual_loss_layers=default_config['perceptual_loss']['layers'],
 		perceptual_loss_weights=default_config['perceptual_loss']['weights'],
-		perceptual_loss_scales=default_config['perceptual_loss']['scales']
+		perceptual_loss_scales=default_config['perceptual_loss']['scales'],
 	)
 
 	converter.train(
@@ -146,12 +150,12 @@ def train_encoders(args):
 
 
 def end2end(args):
-	wandb.init(name="TesnorBoard test", project="Test project", sync_tensorboard=True)
+	wandb.init(name=args.model_name, project=args.project_name, sync_tensorboard=True)
 	train(args)
 	train_encoders(args)
 	cc = LORDContentClassifier(model_name=args.model_name, data_name=args.data_name, base_dir=args.base_dir)
-	cc.train_content_classifier(2)
-	cc.train_class_classifier(2)
+	cc.train_content_classifier(1000)
+	cc.train_class_classifier(1000)
 	ligning_plot(args.model_name, args.base_dir)
 
 
@@ -198,12 +202,17 @@ def main():
 	train_encoders_parser.set_defaults(func=train_encoders)
 
 	end2end_parser = action_parsers.add_parser('end2end')
+	end2end_parser.add_argument('-pn', '--project-name', type=str, required=True)
 	end2end_parser.add_argument('-dn', '--data-name', type=str, required=True)
 	end2end_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	end2end_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	end2end_parser.add_argument('-yd', '--class-dim', type=int, required=True)
 	end2end_parser.add_argument('-gd', '--glo-dir', type=str, default='glo')
 	end2end_parser.add_argument('-g', '--gpus', type=int, default=1)
+	end2end_parser.add_argument('--adain', dest='adain', action='store_true')
+	end2end_parser.add_argument('--no-adain', dest='adain', action='store_false')
+	end2end_parser.add_argument('--adain-normalize', dest='adain_normalize', action='store_true')
+	end2end_parser.add_argument('--no-adain-normalize', dest='adain_normalize', action='store_false')
 	end2end_parser.set_defaults(func=end2end)
 
 	args = parser.parse_args()

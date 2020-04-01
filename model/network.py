@@ -18,504 +18,512 @@ from model.evaluation import EvaluationCallback, TrainEncodersEvaluationCallback
 
 
 class Converter:
+    class Config:
+
+        def __init__(self, img_shape, n_imgs, n_classes,
+                     content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
+                     perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales, adain_normalize,
+                     adain_enabled):
+            self.img_shape = img_shape
 
-	class Config:
+            self.n_imgs = n_imgs
+            self.n_classes = n_classes
 
-		def __init__(self, img_shape, n_imgs, n_classes,
-					 content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
-					 perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales):
+            self.content_dim = content_dim
+            self.class_dim = class_dim
+
+            self.content_std = content_std
+            self.content_decay = content_decay
 
-			self.img_shape = img_shape
+            self.n_adain_layers = n_adain_layers
+            self.adain_enabled = adain_enabled
+            self.adain_dim = adain_dim
+            self.adain_normalize = adain_normalize
+
+            self.perceptual_loss_layers = perceptual_loss_layers
+            self.perceptual_loss_weights = perceptual_loss_weights
+            self.perceptual_loss_scales = perceptual_loss_scales
+
+    @classmethod
+    def build(cls, img_shape, n_imgs, n_classes,
+              content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
+              perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales, adain_normalize, adain_enabled):
+
+        config = Converter.Config(
+            img_shape, n_imgs, n_classes,
+            content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
+            perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales, adain_normalize, adain_enabled
+        )
+
+        content_embedding = cls.__build_content_embedding(n_imgs, content_dim, content_std, content_decay)
+        class_embedding = cls.__build_class_embedding(n_classes, class_dim)
+        class_modulation = cls.__build_class_modulation(class_dim, n_adain_layers, adain_dim)
+        if adain_enabled:
+            generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape, adain_normalize)
+        else:
+            generator = cls.__build_generator_no_adain(content_dim, class_dim, n_adain_layers, adain_dim, img_shape)
+
+        return Converter(config, content_embedding, class_embedding, class_modulation, generator)
+
+    @classmethod
+    def load(cls, model_dir, include_encoders=False):
+        print('loading models...')
+
+        with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
+            config = pickle.load(config_fd)
+
+        content_embedding = load_model(os.path.join(model_dir, 'content_embedding.h5py'))
+        class_embedding = load_model(os.path.join(model_dir, 'class_embedding.h5py'))
+        class_modulation = load_model(os.path.join(model_dir, 'class_modulation.h5py'))
+
+        generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
+            'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
+        })
+
+        if not include_encoders:
+            return Converter(config, content_embedding, class_embedding, class_modulation, generator)
+
+        content_encoder = load_model(os.path.join(model_dir, 'content_encoder.h5py'))
+        class_encoder = load_model(os.path.join(model_dir, 'class_encoder.h5py'))
+
+        return Converter(config, content_embedding, class_embedding, class_modulation, generator, content_encoder,
+                         class_encoder)
+
+    def save(self, model_dir):
+        print('saving models...')
+
+        with open(os.path.join(model_dir, 'config.pkl'), 'wb') as config_fd:
+            pickle.dump(self.config, config_fd)
+
+        self.content_embedding.save(os.path.join(model_dir, 'content_embedding.h5py'))
+        self.class_embedding.save(os.path.join(model_dir, 'class_embedding.h5py'))
+        self.class_modulation.save(os.path.join(model_dir, 'class_modulation.h5py'))
+        self.generator.save(os.path.join(model_dir, 'generator.h5py'))
+
+        if self.content_encoder:
+            self.content_encoder.save(os.path.join(model_dir, 'content_encoder.h5py'))
+
+        if self.class_encoder:
+            self.class_encoder.save(os.path.join(model_dir, 'class_encoder.h5py'))
+
+    def __init__(self, config,
+                 content_embedding, class_embedding,
+                 class_modulation, generator,
+                 content_encoder=None, class_encoder=None):
+
+        self.config = config
+
+        self.content_embedding = content_embedding
+        self.class_embedding = class_embedding
+        self.class_modulation = class_modulation
+        self.generator = generator
+        self.content_encoder = content_encoder
+        self.class_encoder = class_encoder
+
+        self.vgg = self.__build_vgg()
+
+    def train(self, imgs, classes, batch_size, n_epochs, model_dir, tensorboard_dir):
+        img_id = Input(shape=(1,))
+        class_id = Input(shape=(1,))
+
+        content_code = self.content_embedding(img_id)
+        class_code = self.class_embedding(class_id)
+        if self.config.adain_enabled:
+            class_adain_params = self.class_modulation(class_code)
+            generated_img = self.generator([content_code, class_adain_params])
+        else:
+            generated_img = self.generator([content_code, class_code])
+
+        model = Model(inputs=[img_id, class_id], outputs=generated_img)
+
+        model.compile(
+            optimizer=LRMultiplier(
+                optimizer=optimizers.Adam(beta_1=0.5, beta_2=0.999),
+                multipliers={
+                    'content-embedding': 10,
+                    'class-embedding': 10
+                }
+            ),
+
+            loss=self.__perceptual_loss_multiscale
+        )
+
+        lr_scheduler = CosineLearningRateScheduler(max_lr=1e-4, min_lr=1e-5, total_epochs=n_epochs)
+        early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
+
+        tensorboard = EvaluationCallback(
+            imgs, classes,
+            self.content_embedding, self.class_embedding,
+            self.class_modulation, self.generator,
+            tensorboard_dir
+        )
+
+        checkpoint = CustomModelCheckpoint(self, model_dir)
+
+        model.fit(
+            x=[np.arange(imgs.shape[0]), classes], y=imgs,
+            batch_size=batch_size, epochs=n_epochs,
+            callbacks=[lr_scheduler, early_stopping, checkpoint, tensorboard, WandbCallback()],
+            verbose=1
+        )
 
-			self.n_imgs = n_imgs
-			self.n_classes = n_classes
+    def train_encoders(self, imgs, classes, batch_size, n_epochs, model_dir, tensorboard_dir):
+        self.content_encoder = self.__build_content_encoder(self.config.img_shape, self.config.content_dim)
+        self.class_encoder = self.__build_class_encoder(self.config.img_shape, self.config.class_dim)
 
-			self.content_dim = content_dim
-			self.class_dim = class_dim
+        img = Input(shape=self.config.img_shape)
+
+        content_code = self.content_encoder(img)
+        class_code = self.class_encoder(img)
+        if self.config.adain_enabled:
+            class_adain_params = self.class_modulation(class_code)
+            generated_img = self.generator([content_code, class_adain_params])
+        else:
+            generated_img = self.generator([content_code, class_code])
+        model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
+        model.compile(
+            optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
+            loss=[self.__perceptual_loss, losses.mean_squared_error, losses.mean_squared_error],
+            loss_weights=[1, 1e4, 1e4]
+        )
 
-			self.content_std = content_std
-			self.content_decay = content_decay
+        reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=20, verbose=1)
+        early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=40, verbose=1)
 
-			self.n_adain_layers = n_adain_layers
-			self.adain_dim = adain_dim
+        tensorboard = TrainEncodersEvaluationCallback(imgs,
+                                                      self.content_encoder, self.class_encoder,
+                                                      self.class_modulation, self.generator,
+                                                      tensorboard_dir, self.config.adain_enabled
+                                                      )
 
-			self.perceptual_loss_layers = perceptual_loss_layers
-			self.perceptual_loss_weights = perceptual_loss_weights
-			self.perceptual_loss_scales = perceptual_loss_scales
+        checkpoint = CustomModelCheckpoint(self, model_dir)
 
-	@classmethod
-	def build(cls, img_shape, n_imgs, n_classes,
-			  content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
-			  perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales):
+        model.fit(
+            x=imgs,
+            y=[imgs, self.content_embedding.predict(np.arange(imgs.shape[0])), self.class_embedding.predict(classes)],
+            batch_size=batch_size, epochs=n_epochs,
+            callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard, WandbCallback()],
+            verbose=1
+        )
 
-		config = Converter.Config(
-			img_shape, n_imgs, n_classes,
-			content_dim, class_dim, content_std, content_decay, n_adain_layers, adain_dim,
-			perceptual_loss_layers, perceptual_loss_weights, perceptual_loss_scales
-		)
+    def __perceptual_loss(self, y_true, y_pred):
+        perceptual_codes_pred = self.vgg(y_pred)
+        perceptual_codes_true = self.vgg(y_true)
 
-		content_embedding = cls.__build_content_embedding(n_imgs, content_dim, content_std, content_decay)
-		class_embedding = cls.__build_class_embedding(n_classes, class_dim)
-		class_modulation = cls.__build_class_modulation(class_dim, n_adain_layers, adain_dim)
-		generator = cls.__build_generator(content_dim, n_adain_layers, adain_dim, img_shape)
-		# generator = cls.__build_generator_no_adain(content_dim, class_dim, n_adain_layers, adain_dim, img_shape)
+        normalized_weights = self.config.perceptual_loss_weights / np.sum(self.config.perceptual_loss_weights)
+        loss = 0
 
-		return Converter(config, content_embedding, class_embedding, class_modulation, generator)
+        for i, (p, t) in enumerate(zip(perceptual_codes_pred, perceptual_codes_true)):
+            loss += normalized_weights[i] * K.mean(K.abs(p - t), axis=[1, 2, 3])
 
-	@classmethod
-	def load(cls, model_dir, include_encoders=False):
-		print('loading models...')
+        loss = K.mean(loss)
+        return loss
 
-		with open(os.path.join(model_dir, 'config.pkl'), 'rb') as config_fd:
-			config = pickle.load(config_fd)
+    def __perceptual_loss_multiscale(self, y_true, y_pred):
+        loss = 0
 
-		content_embedding = load_model(os.path.join(model_dir, 'content_embedding.h5py'))
-		class_embedding = load_model(os.path.join(model_dir, 'class_embedding.h5py'))
-		class_modulation = load_model(os.path.join(model_dir, 'class_modulation.h5py'))
+        for scale in self.config.perceptual_loss_scales:
+            y_true_resized = tf.image.resize_images(y_true, (scale, scale), method=tf.image.ResizeMethod.BILINEAR)
+            y_pred_resized = tf.image.resize_images(y_pred, (scale, scale), method=tf.image.ResizeMethod.BILINEAR)
 
-		generator = load_model(os.path.join(model_dir, 'generator.h5py'), custom_objects={
-			'AdaptiveInstanceNormalization': AdaptiveInstanceNormalization
-		})
+            loss += self.__perceptual_loss(y_true_resized, y_pred_resized)
 
-		if not include_encoders:
-			return Converter(config, content_embedding, class_embedding, class_modulation, generator)
+        return loss / len(self.config.perceptual_loss_scales)
 
-		content_encoder = load_model(os.path.join(model_dir, 'content_encoder.h5py'))
-		class_encoder = load_model(os.path.join(model_dir, 'class_encoder.h5py'))
+    @classmethod
+    def __build_content_embedding(cls, n_imgs, content_dim, content_std, content_decay):
+        img_id = Input(shape=(1,))
 
-		return Converter(config, content_embedding, class_embedding, class_modulation, generator, content_encoder, class_encoder)
+        content_embedding = Embedding(
+            input_dim=n_imgs,
+            output_dim=content_dim,
+            activity_regularizer=regularizers.l2(content_decay),
+            name='content-embedding'
+        )(img_id)
 
-	def save(self, model_dir):
-		print('saving models...')
+        content_embedding = Reshape(target_shape=(content_dim,))(content_embedding)
+        content_embedding = GaussianNoise(stddev=content_std)(content_embedding)
 
-		with open(os.path.join(model_dir, 'config.pkl'), 'wb') as config_fd:
-			pickle.dump(self.config, config_fd)
+        model = Model(inputs=img_id, outputs=content_embedding)
 
-		self.content_embedding.save(os.path.join(model_dir, 'content_embedding.h5py'))
-		self.class_embedding.save(os.path.join(model_dir, 'class_embedding.h5py'))
-		self.class_modulation.save(os.path.join(model_dir, 'class_modulation.h5py'))
-		self.generator.save(os.path.join(model_dir, 'generator.h5py'))
+        print('content embedding:')
+        model.summary()
 
-		if self.content_encoder:
-			self.content_encoder.save(os.path.join(model_dir, 'content_encoder.h5py'))
+        return model
 
-		if self.class_encoder:
-			self.class_encoder.save(os.path.join(model_dir, 'class_encoder.h5py'))
-
-	def __init__(self, config,
-				 content_embedding, class_embedding,
-				 class_modulation, generator,
-				 content_encoder=None, class_encoder=None):
+    @classmethod
+    def __build_class_embedding(cls, n_classes, class_dim):
+        class_id = Input(shape=(1,))
 
-		self.config = config
-
-		self.content_embedding = content_embedding
-		self.class_embedding = class_embedding
-		self.class_modulation = class_modulation
-		self.generator = generator
-		self.content_encoder = content_encoder
-		self.class_encoder = class_encoder
+        class_embedding = Embedding(input_dim=n_classes, output_dim=class_dim, name='class-embedding')(class_id)
+        class_embedding = Reshape(target_shape=(class_dim,))(class_embedding)
 
-		self.vgg = self.__build_vgg()
+        model = Model(inputs=class_id, outputs=class_embedding)
 
-	def train(self, imgs, classes, batch_size, n_epochs, model_dir, tensorboard_dir):
-		img_id = Input(shape=(1, ))
-		class_id = Input(shape=(1, ))
-
-		content_code = self.content_embedding(img_id)
-		class_code = self.class_embedding(class_id)
-		class_adain_params = self.class_modulation(class_code)
-		generated_img = self.generator([content_code, class_adain_params])
-		# generated_img = self.generator([content_code, class_code])
-
-		model = Model(inputs=[img_id, class_id], outputs=generated_img)
-
-		model.compile(
-			optimizer=LRMultiplier(
-				optimizer=optimizers.Adam(beta_1=0.5, beta_2=0.999),
-				multipliers={
-					'content-embedding': 10,
-					'class-embedding': 10
-				}
-			),
-
-			loss=self.__perceptual_loss_multiscale
-		)
-
-		lr_scheduler = CosineLearningRateScheduler(max_lr=1e-4, min_lr=1e-5, total_epochs=n_epochs)
-		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=100, verbose=1)
-
-		tensorboard = EvaluationCallback(
-			imgs, classes,
-			self.content_embedding, self.class_embedding,
-			self.class_modulation, self.generator,
-			tensorboard_dir
-		)
-
-		checkpoint = CustomModelCheckpoint(self, model_dir)
-
-		model.fit(
-			x=[np.arange(imgs.shape[0]), classes], y=imgs,
-			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[lr_scheduler, early_stopping, checkpoint, tensorboard, WandbCallback()],
-			verbose=1
-		)
-
-	def train_encoders(self, imgs, classes, batch_size, n_epochs, model_dir, tensorboard_dir):
-		self.content_encoder = self.__build_content_encoder(self.config.img_shape, self.config.content_dim)
-		self.class_encoder = self.__build_class_encoder(self.config.img_shape, self.config.class_dim)
-
-		img = Input(shape=self.config.img_shape)
+        print('class embedding:')
+        model.summary()
 
-		content_code = self.content_encoder(img)
-		class_code = self.class_encoder(img)
-		class_adain_params = self.class_modulation(class_code)
-		generated_img = self.generator([content_code, class_adain_params])
+        return model
 
-		model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
-		# content_code = self.content_encoder(img)
-		# class_code = self.class_encoder(img)
-		# generated_img = self.generator([content_code, class_code])
-		#
-		# model = Model(inputs=img, outputs=[generated_img, content_code, class_code])
-		model.compile(
-			optimizer=optimizers.Adam(lr=1e-4, beta_1=0.5, beta_2=0.999),
-			loss=[self.__perceptual_loss, losses.mean_squared_error, losses.mean_squared_error],
-			loss_weights=[1, 1e4, 1e4]
-		)
+    @classmethod
+    def __build_class_modulation(cls, class_dim, n_adain_layers, adain_dim):
+        class_code = Input(shape=(class_dim,))
 
-		reduce_lr = ReduceLROnPlateau(monitor='loss', mode='min', min_delta=1, factor=0.5, patience=20, verbose=1)
-		early_stopping = EarlyStopping(monitor='loss', mode='min', min_delta=1, patience=40, verbose=1)
+        adain_per_layer = [Dense(units=adain_dim * 2)(class_code) for _ in range(n_adain_layers)]
+        adain_all = Concatenate(axis=-1)(adain_per_layer)
+        class_adain_params = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(adain_all)
 
-		tensorboard = TrainEncodersEvaluationCallback(imgs,
-			self.content_encoder, self.class_encoder,
-			self.class_modulation, self.generator,
-			tensorboard_dir
-		)
+        model = Model(inputs=[class_code], outputs=class_adain_params, name='class-modulation')
 
-		checkpoint = CustomModelCheckpoint(self, model_dir)
+        print('class-modulation arch:')
+        model.summary()
 
-		model.fit(
-			x=imgs, y=[imgs, self.content_embedding.predict(np.arange(imgs.shape[0])), self.class_embedding.predict(classes)],
-			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard, WandbCallback()],
-			verbose=1
-		)
+        return model
 
-	def __perceptual_loss(self, y_true, y_pred):
-		perceptual_codes_pred = self.vgg(y_pred)
-		perceptual_codes_true = self.vgg(y_true)
+    @classmethod
+    def __build_generator(cls, content_dim, n_adain_layers, adain_dim, img_shape, adain_normalize):
+        content_code = Input(shape=(content_dim,))
+        class_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
-		normalized_weights = self.config.perceptual_loss_weights / np.sum(self.config.perceptual_loss_weights)
-		loss = 0
+        initial_height = img_shape[0] // (2 ** n_adain_layers)
+        initial_width = img_shape[1] // (2 ** n_adain_layers)
 
-		for i, (p, t) in enumerate(zip(perceptual_codes_pred, perceptual_codes_true)):
-			loss += normalized_weights[i] * K.mean(K.abs(p - t), axis=[1, 2, 3])
+        x = Dense(units=initial_height * initial_width * (adain_dim // 8))(content_code)
+        x = LeakyReLU()(x)
 
-		loss = K.mean(loss)
-		return loss
+        x = Dense(units=initial_height * initial_width * (adain_dim // 4))(x)
+        x = LeakyReLU()(x)
 
-	def __perceptual_loss_multiscale(self, y_true, y_pred):
-		loss = 0
+        x = Dense(units=initial_height * initial_width * adain_dim)(x)
+        x = LeakyReLU()(x)
 
-		for scale in self.config.perceptual_loss_scales:
-			y_true_resized = tf.image.resize_images(y_true, (scale, scale), method=tf.image.ResizeMethod.BILINEAR)
-			y_pred_resized = tf.image.resize_images(y_pred, (scale, scale), method=tf.image.ResizeMethod.BILINEAR)
+        x = Reshape(target_shape=(initial_height, initial_width, adain_dim))(x)
 
-			loss += self.__perceptual_loss(y_true_resized, y_pred_resized)
+        for i in range(n_adain_layers):
+            x = UpSampling2D(size=(2, 2))(x)
+            x = Conv2D(filters=adain_dim, kernel_size=(3, 3), padding='same')(x)
+            x = LeakyReLU()(x)
 
-		return loss / len(self.config.perceptual_loss_scales)
+            x = AdaptiveInstanceNormalization(adain_layer_idx=i, normalize=adain_normalize)([x, class_adain_params])
 
-	@classmethod
-	def __build_content_embedding(cls, n_imgs, content_dim, content_std, content_decay):
-		img_id = Input(shape=(1, ))
+        x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		content_embedding = Embedding(
-			input_dim=n_imgs,
-			output_dim=content_dim,
-			activity_regularizer=regularizers.l2(content_decay),
-			name='content-embedding'
-		)(img_id)
+        x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
+        target_img = Activation('sigmoid')(x)
 
-		content_embedding = Reshape(target_shape=(content_dim, ))(content_embedding)
-		content_embedding = GaussianNoise(stddev=content_std)(content_embedding)
+        model = Model(inputs=[content_code, class_adain_params], outputs=target_img, name='generator')
 
-		model = Model(inputs=img_id, outputs=content_embedding)
+        print('generator arch:')
+        model.summary()
 
-		print('content embedding:')
-		model.summary()
+        return model
 
-		return model
+    @classmethod
+    def __build_generator_no_adain(cls, content_dim, class_dim, n_conv_layers, filter_dim, img_shape):
+        content_code = Input(shape=(content_dim,))
+        class_code = Input(shape=(class_dim,))
+        # class_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
 
-	@classmethod
-	def __build_class_embedding(cls, n_classes, class_dim):
-		class_id = Input(shape=(1, ))
+        initial_height = img_shape[0] // (2 ** n_conv_layers)
+        initial_width = img_shape[1] // (2 ** n_conv_layers)
 
-		class_embedding = Embedding(input_dim=n_classes, output_dim=class_dim, name='class-embedding')(class_id)
-		class_embedding = Reshape(target_shape=(class_dim, ))(class_embedding)
+        x = Concatenate()([content_code, class_code])
 
-		model = Model(inputs=class_id, outputs=class_embedding)
+        x = Dense(units=initial_height * initial_width * (filter_dim // 8))(x)
+        x = LeakyReLU()(x)
 
-		print('class embedding:')
-		model.summary()
+        x = Dense(units=initial_height * initial_width * (filter_dim // 4))(x)
+        x = LeakyReLU()(x)
 
-		return model
+        x = Dense(units=initial_height * initial_width * filter_dim)(x)
+        x = LeakyReLU()(x)
 
-	@classmethod
-	def __build_class_modulation(cls, class_dim, n_adain_layers, adain_dim):
-		class_code = Input(shape=(class_dim, ))
+        x = Reshape(target_shape=(initial_height, initial_width, filter_dim))(x)
 
-		adain_per_layer = [Dense(units=adain_dim * 2)(class_code) for _ in range(n_adain_layers)]
-		adain_all = Concatenate(axis=-1)(adain_per_layer)
-		class_adain_params = Reshape(target_shape=(n_adain_layers, adain_dim, 2))(adain_all)
+        for i in range(n_conv_layers):
+            x = UpSampling2D(size=(2, 2))(x)
+            x = Conv2D(filters=filter_dim, kernel_size=(3, 3), padding='same')(x)
+            x = LeakyReLU()(x)
 
-		model = Model(inputs=[class_code], outputs=class_adain_params, name='class-modulation')
+        # x = AdaptiveInstanceNormalization(adain_layer_idx=i)([x, class_adain_params])
 
-		print('class-modulation arch:')
-		model.summary()
+        x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		return model
+        x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
+        target_img = Activation('sigmoid')(x)
 
-	@classmethod
-	def __build_generator(cls, content_dim, n_adain_layers, adain_dim, img_shape):
-		content_code = Input(shape=(content_dim, ))
-		class_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
+        model = Model(inputs=[content_code, class_code], outputs=target_img, name='generator')
 
-		initial_height = img_shape[0] // (2 ** n_adain_layers)
-		initial_width = img_shape[1] // (2 ** n_adain_layers)
+        print('generator arch:')
+        model.summary()
 
-		x = Dense(units=initial_height * initial_width * (adain_dim // 8))(content_code)
-		x = LeakyReLU()(x)
+        return model
 
-		x = Dense(units=initial_height * initial_width * (adain_dim // 4))(x)
-		x = LeakyReLU()(x)
+    def __build_vgg(self):
+        vgg = vgg16.VGG16(include_top=False, input_shape=(self.config.img_shape[0], self.config.img_shape[1], 3))
 
-		x = Dense(units=initial_height * initial_width * adain_dim)(x)
-		x = LeakyReLU()(x)
+        layer_outputs = [vgg.layers[layer_id].output for layer_id in self.config.perceptual_loss_layers]
+        feature_extractor = Model(inputs=vgg.inputs, outputs=layer_outputs)
 
-		x = Reshape(target_shape=(initial_height, initial_width, adain_dim))(x)
+        img = Input(shape=self.config.img_shape)
 
-		for i in range(n_adain_layers):
-			x = UpSampling2D(size=(2, 2))(x)
-			x = Conv2D(filters=adain_dim, kernel_size=(3, 3), padding='same')(x)
-			x = LeakyReLU()(x)
+        if self.config.img_shape[-1] == 1:
+            x = Lambda(lambda t: tf.tile(t, multiples=(1, 1, 1, 3)))(img)
+        else:
+            x = img
 
-			x = AdaptiveInstanceNormalization(adain_layer_idx=i)([x, class_adain_params])
+        x = VggNormalization()(x)
+        features = feature_extractor(x)
 
-		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
-		x = LeakyReLU()(x)
+        model = Model(inputs=img, outputs=features, name='vgg')
 
-		x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
-		target_img = Activation('sigmoid')(x)
+        print('vgg arch:')
+        model.summary()
 
-		model = Model(inputs=[content_code, class_adain_params], outputs=target_img, name='generator')
+        return model
 
-		print('generator arch:')
-		model.summary()
+    @classmethod
+    def __build_content_encoder(cls, img_shape, content_dim):
+        img = Input(shape=img_shape)
 
-		return model
+        x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
+        x = LeakyReLU()(x)
 
-	@classmethod
-	def __build_generator_no_adain(cls, content_dim, class_dim, n_conv_layers, filter_dim, img_shape):
-		content_code = Input(shape=(content_dim, ))
-		class_code = Input(shape=(class_dim, ))
-		# class_adain_params = Input(shape=(n_adain_layers, adain_dim, 2))
+        x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		initial_height = img_shape[0] // (2 ** n_conv_layers)
-		initial_width = img_shape[1] // (2 ** n_conv_layers)
+        x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		x = Concatenate()([content_code, class_code])
+        x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		x = Dense(units=initial_height * initial_width * (filter_dim // 8))(x)
-		x = LeakyReLU()(x)
+        x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		x = Dense(units=initial_height * initial_width * (filter_dim // 4))(x)
-		x = LeakyReLU()(x)
+        x = Flatten()(x)
 
-		x = Dense(units=initial_height * initial_width * filter_dim)(x)
-		x = LeakyReLU()(x)
+        for i in range(2):
+            x = Dense(units=256)(x)
+            x = LeakyReLU()(x)
 
-		x = Reshape(target_shape=(initial_height, initial_width, filter_dim))(x)
+        content_code = Dense(units=content_dim)(x)
 
-		for i in range(n_conv_layers):
-			x = UpSampling2D(size=(2, 2))(x)
-			x = Conv2D(filters=filter_dim, kernel_size=(3, 3), padding='same')(x)
-			x = LeakyReLU()(x)
+        model = Model(inputs=img, outputs=content_code, name='content-encoder')
 
-			# x = AdaptiveInstanceNormalization(adain_layer_idx=i)([x, class_adain_params])
+        print('content-encoder arch:')
+        model.summary()
 
-		x = Conv2D(filters=64, kernel_size=(5, 5), padding='same')(x)
-		x = LeakyReLU()(x)
+        return model
 
-		x = Conv2D(filters=img_shape[-1], kernel_size=(7, 7), padding='same')(x)
-		target_img = Activation('sigmoid')(x)
+    @classmethod
+    def __build_class_encoder(cls, img_shape, class_dim):
+        img = Input(shape=img_shape)
 
-		model = Model(inputs=[content_code, class_code], outputs=target_img, name='generator')
+        x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
+        x = LeakyReLU()(x)
 
-		print('generator arch:')
-		model.summary()
+        x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		return model
+        x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-	def __build_vgg(self):
-		vgg = vgg16.VGG16(include_top=False, input_shape=(self.config.img_shape[0], self.config.img_shape[1], 3))
+        x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		layer_outputs = [vgg.layers[layer_id].output for layer_id in self.config.perceptual_loss_layers]
-		feature_extractor = Model(inputs=vgg.inputs, outputs=layer_outputs)
+        x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
+        x = LeakyReLU()(x)
 
-		img = Input(shape=self.config.img_shape)
+        x = Flatten()(x)
 
-		if self.config.img_shape[-1] == 1:
-			x = Lambda(lambda t: tf.tile(t, multiples=(1, 1, 1, 3)))(img)
-		else:
-			x = img
+        for i in range(2):
+            x = Dense(units=256)(x)
+            x = LeakyReLU()(x)
 
-		x = VggNormalization()(x)
-		features = feature_extractor(x)
+        class_code = Dense(units=class_dim)(x)
 
-		model = Model(inputs=img, outputs=features, name='vgg')
+        model = Model(inputs=img, outputs=class_code, name='class-encoder')
 
-		print('vgg arch:')
-		model.summary()
+        print('class-encoder arch:')
+        model.summary()
 
-		return model
-
-	@classmethod
-	def __build_content_encoder(cls, img_shape, content_dim):
-		img = Input(shape=img_shape)
-
-		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Flatten()(x)
-
-		for i in range(2):
-			x = Dense(units=256)(x)
-			x = LeakyReLU()(x)
-
-		content_code = Dense(units=content_dim)(x)
-
-		model = Model(inputs=img, outputs=content_code, name='content-encoder')
-
-		print('content-encoder arch:')
-		model.summary()
-
-		return model
-
-	@classmethod
-	def __build_class_encoder(cls, img_shape, class_dim):
-		img = Input(shape=img_shape)
-
-		x = Conv2D(filters=64, kernel_size=(7, 7), strides=(1, 1), padding='same')(img)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=128, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Conv2D(filters=256, kernel_size=(4, 4), strides=(2, 2), padding='same')(x)
-		x = LeakyReLU()(x)
-
-		x = Flatten()(x)
-
-		for i in range(2):
-			x = Dense(units=256)(x)
-			x = LeakyReLU()(x)
-
-		class_code = Dense(units=class_dim)(x)
-
-		model = Model(inputs=img, outputs=class_code, name='class-encoder')
-
-		print('class-encoder arch:')
-		model.summary()
-
-		return model
+        return model
 
 
 class AdaptiveInstanceNormalization(Layer):
 
-	def __init__(self, adain_layer_idx, **kwargs):
-		super().__init__(**kwargs)
-		self.adain_layer_idx = adain_layer_idx
+    def __init__(self, adain_layer_idx, normalize, **kwargs):
+        super().__init__(**kwargs)
+        self.normalize = normalize
+        self.adain_layer_idx = adain_layer_idx
 
-	def call(self, inputs, **kwargs):
-		assert isinstance(inputs, list)
+    def call(self, inputs, **kwargs):
+        assert isinstance(inputs, list)
 
-		x, adain_params = inputs
-		adain_offset = adain_params[:, self.adain_layer_idx, :, 0]
-		adain_scale = adain_params[:, self.adain_layer_idx, :, 1]
+        x, adain_params = inputs
+        adain_offset = adain_params[:, self.adain_layer_idx, :, 0]
+        adain_scale = adain_params[:, self.adain_layer_idx, :, 1]
 
-		adain_dim = x.shape[-1]
-		adain_offset = K.reshape(adain_offset, (-1, 1, 1, adain_dim))
-		adain_scale = K.reshape(adain_scale, (-1, 1, 1, adain_dim))
+        adain_dim = x.shape[-1]
+        adain_offset = K.reshape(adain_offset, (-1, 1, 1, adain_dim))
+        adain_scale = K.reshape(adain_scale, (-1, 1, 1, adain_dim))
 
-		mean, var = tf.nn.moments(x, axes=[1, 2], keep_dims=True)
-		x_standard = x #(x - mean) / (tf.sqrt(var) + 1e-7)
+        mean, var = tf.nn.moments(x, axes=[1, 2], keep_dims=True)
+        if self.normalize:
+            x_standard = (x - mean) / (tf.sqrt(var) + 1e-7)
+        else:
+            x_standard = x
 
-		return (x_standard * adain_scale) + adain_offset
+        return (x_standard * adain_scale) + adain_offset
 
-	def get_config(self):
-		config = {
-			'adain_layer_idx': self.adain_layer_idx
-		}
+    def get_config(self):
+        config = {
+            'adain_layer_idx': self.adain_layer_idx
+        }
 
-		base_config = super().get_config()
-		return dict(list(base_config.items()) + list(config.items()))
+        base_config = super().get_config()
+        return dict(list(base_config.items()) + list(config.items()))
 
 
 class VggNormalization(Layer):
 
-	def __init__(self, **kwargs):
-		super().__init__(**kwargs)
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
-	def call(self, inputs, **kwargs):
-		x = inputs * 255
-		return vgg16.preprocess_input(x)
+    def call(self, inputs, **kwargs):
+        x = inputs * 255
+        return vgg16.preprocess_input(x)
 
 
 class CustomModelCheckpoint(Callback):
 
-	def __init__(self, model, path):
-		super().__init__()
-		self.__model = model
-		self.__path = path
+    def __init__(self, model, path):
+        super().__init__()
+        self.__model = model
+        self.__path = path
 
-	def on_epoch_end(self, epoch, logs=None):
-		self.__model.save(self.__path)
+    def on_epoch_end(self, epoch, logs=None):
+        self.__model.save(self.__path)
 
 
 class CosineLearningRateScheduler(Callback):
 
-	def __init__(self, max_lr, min_lr, total_epochs):
-		super().__init__()
+    def __init__(self, max_lr, min_lr, total_epochs):
+        super().__init__()
 
-		self.max_lr = max_lr
-		self.min_lr = min_lr
-		self.total_epochs = total_epochs
+        self.max_lr = max_lr
+        self.min_lr = min_lr
+        self.total_epochs = total_epochs
 
-	def on_train_begin(self, logs=None):
-		K.set_value(self.model.optimizer.lr, self.max_lr)
+    def on_train_begin(self, logs=None):
+        K.set_value(self.model.optimizer.lr, self.max_lr)
 
-	def on_epoch_end(self, epoch, logs=None):
-		fraction = epoch / self.total_epochs
-		lr = self.min_lr + 0.5 * (self.max_lr - self.min_lr) * (1 + np.cos(fraction * np.pi))
+    def on_epoch_end(self, epoch, logs=None):
+        fraction = epoch / self.total_epochs
+        lr = self.min_lr + 0.5 * (self.max_lr - self.min_lr) * (1 + np.cos(fraction * np.pi))
 
-		K.set_value(self.model.optimizer.lr, lr)
-		logs['lr'] = lr
+        K.set_value(self.model.optimizer.lr, lr)
+        logs['lr'] = lr
