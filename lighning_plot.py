@@ -24,7 +24,7 @@ def ligning_plot(model_name, base_dir):
     assets = AssetManager(base_dir)
     converter = Converter.load(assets.get_model_dir(model_name), include_encoders=True)
 
-    data_base_dir = os.path.join(base_dir, '..', 'data', 'small_norb_lord')
+    data_base_dir = 'data/small_norb_lord'
 
     azimuths = []
     elevations = []
