@@ -150,8 +150,8 @@ def end2end(args):
 	train(args)
 	train_encoders(args)
 	cc = LORDContentClassifier(model_name=args.model_name, data_name=args.data_name, base_dir=args.base_dir)
-	cc.train_content_classifier(10000)
-	cc.train_class_classifier(10000)
+	cc.train_content_classifier(2)
+	cc.train_class_classifier(2)
 	ligning_plot(args.model_name, args.base_dir)
 
 
