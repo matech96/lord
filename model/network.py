@@ -198,7 +198,7 @@ class Converter:
 		model.fit(
 			x=imgs, y=[imgs, self.content_embedding.predict(np.arange(imgs.shape[0])), self.class_embedding.predict(classes)],
 			batch_size=batch_size, epochs=n_epochs,
-			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard, WandbCallback],
+			callbacks=[reduce_lr, early_stopping, checkpoint, tensorboard, WandbCallback()],
 			verbose=1
 		)
 
