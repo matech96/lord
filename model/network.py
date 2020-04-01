@@ -155,7 +155,7 @@ class Converter:
             imgs, classes,
             self.content_embedding, self.class_embedding,
             self.class_modulation, self.generator,
-            tensorboard_dir
+            tensorboard_dir, self.config.adain_enabled
         )
 
         checkpoint = CustomModelCheckpoint(self, model_dir)
