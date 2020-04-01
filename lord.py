@@ -144,7 +144,7 @@ def train_encoders(args):
 
 
 def end2end(args):
-	wandb.init(project="Test project")
+	wandb.init(name="TesnorBoard test", project="Test project", sync_tensorboard=True)
 	train(args)
 	train_encoders(args)
 
