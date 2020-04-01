@@ -20,11 +20,11 @@ def pred_imgs(converter, imgs):
     return content_codes, class_adain_params
 
 
-def ligning_plot(model_name):
-    assets = AssetManager('results')
+def ligning_plot(model_name, base_dir):
+    assets = AssetManager(base_dir)
     converter = Converter.load(assets.get_model_dir(model_name), include_encoders=True)
 
-    base_dir = r'data\small_norb_lord'
+    data_base_dir = os.path.join(base_dir, '..', 'data', 'small_norb_lord')
 
     azimuths = []
     elevations = []
@@ -34,10 +34,10 @@ def ligning_plot(model_name):
     img_paths = []
 
     regex = re.compile(r'azimuth(\d+)_elevation(\d+)_lighting(\d+)_(\w+).jpg')
-    for category in tqdm(os.listdir(base_dir)):
-        for instance in os.listdir(os.path.join(base_dir, category)):
-            for file_name in os.listdir(os.path.join(base_dir, category, instance)):
-                img_path = os.path.join(base_dir, category, instance, file_name)
+    for category in tqdm(os.listdir(data_base_dir)):
+        for instance in os.listdir(os.path.join(data_base_dir, category)):
+            for file_name in os.listdir(os.path.join(data_base_dir, category, instance)):
+                img_path = os.path.join(data_base_dir, category, instance, file_name)
                 azimuth, elevation, lighting, lt_rt = regex.match(file_name).groups()
 
                 class_id = (int(category) * 10) + int(instance)
