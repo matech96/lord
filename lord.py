@@ -74,10 +74,10 @@ def split_samples(args):
 
 
 def train(args):
-	wandb.log(default_config)
+	wandb.config.update(default_config)
 	args_dict = vars(args)
 	args_dict.pop('func')
-	wandb.log(args_dict)
+	wandb.config.update(args_dict)
 	assets = AssetManager(args.base_dir)
 	model_dir = assets.recreate_model_dir(args.model_name)
 	tensorboard_dir = assets.recreate_tensorboard_dir(args.model_name)
