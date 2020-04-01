@@ -1,7 +1,6 @@
 from model.network import Converter
 import wandb
 import numpy as np
-import pandas as pd
 from keras.callbacks import EarlyStopping, CSVLogger
 from assets import AssetManager
 
@@ -48,9 +47,9 @@ class LORDContentClassifier:
                          callbacks=callbacks)
         wandb.log({'content_classifier_val_acc': hist.history['val_accuracy'][-1],
                    'content_classifier_n_epoch': hist.epoch[-1]})
-        data = pd.DataFrame(data={"epoch": hist.epoch, "val_acc": hist.history['val_accuracy']})
+        data = list(zip(hist.history['val_accuracy'], hist.epoch))
         wandb.log(
-            {"content_classifier_history": data})
+            {"content_classifier_history": wandb.Table(data=data, columns=["val_acc", "epoch"])})
 
     def train_class_classifier(self, n_epochs):
         print(f'Class code size: {self.class_codes.shape[1]}')
@@ -60,9 +59,9 @@ class LORDContentClassifier:
                          callbacks=callbacks)
         wandb.log({'class_classifier_val_acc': hist.history['val_accuracy'][-1],
                    'class_classifier_n_epoch': hist.epoch[-1]})
-        data = pd.DataFrame(data={"epoch": hist.epoch, "val_acc": hist.history['val_accuracy']})
+        data = list(zip(hist.history['val_accuracy'], hist.epoch))
         wandb.log(
-            {"class_classifier_history": data})
+            {"class_classifier_history": wandb.Table(data=data, columns=["val_acc", "epoch"])})
 
     def get_model(self, input_dim):
         model = Sequential()
@@ -74,17 +73,3 @@ class LORDContentClassifier:
                       optimizer='adam',
                       metrics=['accuracy'])
         return model
-
-# In[6]:
-
-
-# cc = LORDContentClassifier(model_name='mnist_model_64', data_name = 'minst_10_train')
-# cc = LORDContentClassifier(model_name='smallnorb_model', data_name = 'smallnorb_test')
-# cc = LORDContentClassifier(model_name='smallnorb_model', data_name = 'smallnorb_strict_class_test')
-# cc = LORDContentClassifier(model_name='emnist_model_frist_stage', data_name = 'emnist_test')
-# cc = LORDContentClassifier(model_name='smallnorb_model_fxd', data_name = 'smallnorb_strict_class_fxd_train')
-# cc = LORDContentClassifier(model_name='smallnorb_model_fxd', data_name = 'smallnorb_strict_class_fxd_test')
-# cc = LORDContentClassifier(model_name='smallnorb_no_adain_scale', data_name = 'smallnorb_strict_class_fxd_test')
-#
-# cc.train_content_classifier(10000)
-# cc.train_class_classifier(10000)
