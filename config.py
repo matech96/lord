@@ -13,11 +13,11 @@ default_config = dict(
 
 	train=dict(
 		batch_size=64,
-		n_epochs=10#200
+		n_epochs=1#200
 	),
 
 	train_encoders=dict(
 		batch_size=64,
-		n_epochs=10#200
+		n_epochs=1#200
 	)
 )
