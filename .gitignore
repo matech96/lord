@@ -8,3 +8,5 @@ results/*
 logs/*
 .ipynb_checkpoints
 *-checkpoints.ipynb
+.vscode/*
+venv/*
