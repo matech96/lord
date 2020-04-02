@@ -481,7 +481,8 @@ class AdaptiveInstanceNormalization(Layer):
 
     def get_config(self):
         config = {
-            'adain_layer_idx': self.adain_layer_idx
+            'adain_layer_idx': self.adain_layer_idx,
+            'normalize': self.normalize
         }
 
         base_config = super().get_config()
