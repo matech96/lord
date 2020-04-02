@@ -12,15 +12,18 @@ from tqdm import tqdm
 import cv2
 
 
-def pred_imgs(converter, imgs):
+def pred_imgs(converter, imgs, adain_enabled):
     curr_imgs = np.stack(imgs, axis=0)
     content_codes = converter.content_encoder.predict(curr_imgs)
     class_codes = converter.class_encoder.predict(curr_imgs)
-    class_adain_params = converter.class_modulation.predict(class_codes)
-    return content_codes, class_adain_params
+    if adain_enabled:
+        class_adain_params = converter.class_modulation.predict(class_codes)
+        return content_codes, class_adain_params
+    else:
+        return content_codes, class_codes
 
 
-def ligning_plot(model_name, base_dir):
+def ligning_plot(model_name, base_dir, adain_enabled):
     assets = AssetManager(base_dir)
     converter = Converter.load(assets.get_model_dir(model_name), include_encoders=True)
 
@@ -69,8 +72,8 @@ def ligning_plot(model_name, base_dir):
     fxd_content_img = l2li(fxd_content)
     fxd_class_img = l2li(fxd_class)
 
-    fxd_content_cnt, fxd_content_cls = pred_imgs(converter, fxd_content_img)
-    fxd_class_cnt, fxd_class_cls = pred_imgs(converter, fxd_class_img)
+    fxd_content_cnt, fxd_content_cls = pred_imgs(converter, fxd_content_img, adain_enabled)
+    fxd_class_cnt, fxd_class_cls = pred_imgs(converter, fxd_class_img, adain_enabled)
 
     plt.rcParams["figure.figsize"] = (20, 20)
     blank = np.zeros_like(fxd_content_img[0])
