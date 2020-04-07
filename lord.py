@@ -155,9 +155,12 @@ def end2end(args):
 	wandb.init(name=args.model_name, project=args.project_name, sync_tensorboard=True)
 	train(args)
 	train_encoders(args)
-	cc = LORDContentClassifier(model_name=args.model_name, data_name=args.data_name, base_dir=args.base_dir)
-	cc.train_content_classifier(1000)
-	cc.train_class_classifier(1000)
+	cc_train = LORDContentClassifier(model_name=args.model_name, data_name=args.data_name, base_dir=args.base_dir)
+	cc_train.train_content_classifier(1000)
+	cc_train.train_class_classifier(1000)
+	cc_test = LORDContentClassifier(model_name=args.model_name, data_name=args.test_data_name, base_dir=args.base_dir)
+	cc_test.train_content_classifier(1000)
+	cc_test.train_class_classifier(1000)
 	ligning_plot(args.model_name, args.base_dir, args.adain)
 
 
@@ -206,6 +209,7 @@ def main():
 	end2end_parser = action_parsers.add_parser('end2end')
 	end2end_parser.add_argument('-pn', '--project-name', type=str, required=True)
 	end2end_parser.add_argument('-dn', '--data-name', type=str, required=True)
+	end2end_parser.add_argument('-dn', '--test-data-name', type=str, required=True)
 	end2end_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	end2end_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	end2end_parser.add_argument('-yd', '--class-dim', type=int, required=True)
