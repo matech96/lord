@@ -209,7 +209,7 @@ def main():
 	end2end_parser = action_parsers.add_parser('end2end')
 	end2end_parser.add_argument('-pn', '--project-name', type=str, required=True)
 	end2end_parser.add_argument('-dn', '--data-name', type=str, required=True)
-	end2end_parser.add_argument('-dn', '--test-data-name', type=str, required=True)
+	end2end_parser.add_argument('-tdn', '--test-data-name', type=str, required=True)
 	end2end_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	end2end_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	end2end_parser.add_argument('-yd', '--class-dim', type=int, required=True)
