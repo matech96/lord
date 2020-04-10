@@ -74,8 +74,8 @@ def split_samples(args):
 
 
 def train(args):
-	if args['content_decay'] is not None:
-		default_config['content_decay'] = args['content_decay']
+	if args.content_decay is not None:
+		default_config['content_decay'] = args.content_decay
 	wandb.config.update(default_config)
 	args_dict = vars(args)
 	args_dict.pop('func')
