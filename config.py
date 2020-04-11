@@ -1,6 +1,6 @@
 default_config = dict(
-	content_std=1,
-	content_decay=0.01,
+	# content_std=1,
+	# content_decay=0.01,
 
 	n_adain_layers=4,
 	# adain_enabled=True,
