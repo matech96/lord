@@ -74,8 +74,6 @@ def split_samples(args):
 
 
 def train(args):
-	if args.content_decay is not None:
-		default_config['content_decay'] = args.content_decay
 	wandb.config.update(default_config)
 	args_dict = vars(args)
 	args_dict.pop('func')
@@ -96,8 +94,8 @@ def train(args):
 		content_dim=args.content_dim,
 		class_dim=args.class_dim,
 
-		content_std=default_config['content_std'],
-		content_decay=default_config['content_decay'],
+		content_std=args.content_std,
+		content_decay=args.content_decay,
 
 		n_adain_layers=default_config['n_adain_layers'],
 		adain_enabled=args.adain,
@@ -215,7 +213,8 @@ def main():
 	end2end_parser.add_argument('-mn', '--model-name', type=str, required=True)
 	end2end_parser.add_argument('-cd', '--content-dim', type=int, required=True)
 	end2end_parser.add_argument('-yd', '--class-dim', type=int, required=True)
-	end2end_parser.add_argument('-cde', '--content-decay', type=float, default=None)
+	end2end_parser.add_argument('-cde', '--content-decay', type=float, default=0.001)
+	end2end_parser.add_argument('-cstd', '--content-std', type=float, default=1)
 	end2end_parser.add_argument('-gd', '--glo-dir', type=str, default='glo')
 	end2end_parser.add_argument('-g', '--gpus', type=int, default=1)
 	end2end_parser.add_argument('--adain', dest='adain', action='store_true')
